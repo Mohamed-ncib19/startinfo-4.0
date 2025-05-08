@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id             Int              @id @default(autoincrement())
+  email          String           @unique
+  password       String
+  name           String
+  role           String           @default("STUDENT")
+  verified       Boolean          @default(false)
+  verifyToken    String?          @unique
+  resetToken     String?          @unique
+  resetTokenExp  DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  achievements   Achievement[]
+  certificates   Certificate[]
+  forumPosts     ForumPost[]
+  forumReplies   ForumReply[]
+  lessonProgress LessonProgress[]
+  profile        Profile?
+  progress       Progress[]
+  projects       Project[]
+  badges         Badge[]          @relation("BadgeToUser")
+}
+
+model Profile {
+  id        Int      @id @default(autoincrement())
+  bio       String?
+  avatar    String?
+  github    String?
+  linkedin  String?
+  website   String?
+  userId    Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Course {
+  id           Int           @id @default(autoincrement())
+  title        String
+  description  String
+  level        String
+  thumbnail    String
+  duration     Int
+  price        Float         @default(0)
+  published    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  certificates Certificate[]
+  lessons      Lesson[]
+  progress     Progress[]
+  Course_A     Course[]      @relation("CoursePrerequisites")
+  Course_B     Course[]      @relation("CoursePrerequisites")
+}
+
+model Lesson {
+  id          Int              @id @default(autoincrement())
+  title       String
+  description String
+  content     String
+  videoUrl    String?
+  duration    Int
+  order       Int
+  isPublished Boolean          @default(false)
+  courseId    Int
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  course      Course           @relation(fields: [courseId], references: [id])
+  progress    LessonProgress[]
+  quizzes     Quiz[]
+  resources   Resource[]
+  simulator   Simulator?
+
+  @@unique([courseId, order])
+}
+
+model Resource {
+  id        Int      @id @default(autoincrement())
+  title     String
+  type      String
+  url       String
+  lessonId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lesson    Lesson   @relation(fields: [lessonId], references: [id])
+}
+
+model Simulator {
+  id         Int      @id @default(autoincrement())
+  config     String
+  components String
+  lessonId   Int      @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lesson     Lesson   @relation(fields: [lessonId], references: [id])
+}
+
+model Quiz {
+  id        Int        @id @default(autoincrement())
+  title     String
+  lessonId  Int
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  questions Question[]
+  lesson    Lesson     @relation(fields: [lessonId], references: [id])
+}
+
+model Question {
+  id        Int      @id @default(autoincrement())
+  content   String
+  options   String
+  answer    Int
+  quizId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  quiz      Quiz     @relation(fields: [quizId], references: [id])
+}
+
+model Badge {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  imageUrl    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]   @relation("BadgeToUser")
+}
+
+model Progress {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  courseId  Int
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  course    Course   @relation(fields: [courseId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Project {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  code        String
+  simulator   String
+  isPublic    Boolean  @default(false)
+  userId      Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model ForumPost {
+  id         Int          @id @default(autoincrement())
+  title      String
+  content    String
+  userId     Int
+  category   String
+  tags       String
+  views      Int          @default(0)
+  likes      Int          @default(0)
+  isResolved Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  user       User         @relation(fields: [userId], references: [id])
+  replies    ForumReply[]
+}
+
+model ForumReply {
+  id         Int       @id @default(autoincrement())
+  content    String
+  userId     Int
+  postId     Int
+  likes      Int       @default(0)
+  isAccepted Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  post       ForumPost @relation(fields: [postId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
+}
+
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  points      Int
+  userId      Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Certificate {
+  id                Int      @id @default(autoincrement())
+  userId            Int
+  courseId          Int
+  issuedAt          DateTime @default(now())
+  certificateNumber String   @unique
+  course            Course   @relation(fields: [courseId], references: [id])
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, courseId])
+}
+
+model LessonProgress {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  lessonId    Int
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  timeSpent   Int
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lesson      Lesson    @relation(fields: [lessonId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, lessonId])
+}

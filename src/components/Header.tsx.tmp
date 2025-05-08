@@ -1,0 +1,100 @@
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Bot, BookOpen, Trophy, Users, Menu, X } from 'lucide-react';
+
+const Header = React.memo(function Header() {
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+
+  return (
+    <header className="sticky top-0 z-50 w-full backdrop-blur-lg bg-background/80 border-b border-border">
+      <div className="container mx-auto px-4 flex h-16 items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Bot className="h-8 w-8 text-robotics-blue" />
+          <h1 className="text-xl font-bold text-foreground">
+            Start<span className="text-robotics-orange">info</span>
+          </h1>
+        </div>
+
+        <nav className="hidden md:flex items-center space-x-6">
+          <a
+            href="#courses"
+            className="text-foreground/80 hover:text-foreground flex items-center gap-2"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span>Courses</span>
+          </a>
+          <a
+            href="#projects"
+            className="text-foreground/80 hover:text-foreground flex items-center gap-2"
+          >
+            <Bot className="h-4 w-4" />
+            <span>Projects</span>
+          </a>
+          <a
+            href="#certifications"
+            className="text-foreground/80 hover:text-foreground flex items-center gap-2"
+          >
+            <Trophy className="h-4 w-4" />
+            <span>Certifications</span>
+          </a>
+          <a
+            href="#community"
+            className="text-foreground/80 hover:text-foreground flex items-center gap-2"
+          >
+            <Users className="h-4 w-4" />
+            <span>Community</span>
+          </a>
+        </nav>
+
+        <div className="hidden md:flex items-center space-x-4">
+          <Button variant="outline">Log in</Button>
+          <Button>Get Started</Button>
+        </div>
+
+        <button className="md:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+          {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </button>
+      </div>
+
+      {/* Mobile menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden">
+          <div className="px-2 pt-2 pb-3 space-y-1 bg-background border-b border-border">
+            <a
+              href="#courses"
+              className="block px-3 py-2 rounded-md text-base font-medium text-foreground"
+            >
+              Courses
+            </a>
+            <a
+              href="#projects"
+              className="block px-3 py-2 rounded-md text-base font-medium text-foreground"
+            >
+              Projects
+            </a>
+            <a
+              href="#certifications"
+              className="block px-3 py-2 rounded-md text-base font-medium text-foreground"
+            >
+              Certifications
+            </a>
+            <a
+              href="#community"
+              className="block px-3 py-2 rounded-md text-base font-medium text-foreground"
+            >
+              Community
+            </a>
+            <div className="pt-2 space-y-2">
+              <Button variant="outline" className="w-full">
+                Log in
+              </Button>
+              <Button className="w-full">Get Started</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </header>
+  )
+});
+
+export default Header;
