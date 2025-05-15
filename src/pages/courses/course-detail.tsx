@@ -82,15 +82,21 @@ const CourseDetail = () => {
     };
 
     const fetchProgress = async () => {
-      if (!user) return;
-      
+      if (!id || !user || !user.token) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/api/courses/${id}/progress`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch progress');
+        const response = await fetch(`${API_BASE_URL}/api/courses/${id}/progress`, {
+          headers: {
+            'Authorization': `Bearer ${user.token}`,
+            // 'Content-Type': 'application/json' // Optional for GET, but good practice
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setProgress(data);
+        } else {
+          console.error('Failed to fetch progress:', response.statusText);
+          // Optionally, set an error state here if progress is critical
         }
-        const data = await response.json();
-        setProgress(data);
       } catch (error) {
         console.error('Error fetching progress:', error);
       }

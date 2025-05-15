@@ -152,6 +152,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 
 
+
 // Get all courses
 app.get('/api/courses', async (req, res) => {
   try {
@@ -163,6 +164,7 @@ app.get('/api/courses', async (req, res) => {
     });
     console.log('Courses fetched:', courses);
     res.json(courses);
+
   } catch (error) {
     console.error('Error fetching courses:', error);
     res.status(500).json({ error: 'Failed to fetch courses' });
@@ -415,129 +417,31 @@ app.get('/api/courses/:courseId/lessons', async (req, res) => {
 
 // Get lesson by ID
 app.get('/api/courses/:courseId/lessons/:lessonId', async (req, res) => {
+  const courseId = parseInt(req.params.courseId);
+  const lessonId = parseInt(req.params.lessonId);
+
+  if (isNaN(courseId) || isNaN(lessonId)) {
+    return res.status(400).json({ error: 'Invalid course or lesson ID' });
+  }
+
   try {
-    console.log('Received lesson fetch request:', {
-      params: req.params,
-      query: req.query
-    });
-
-    const courseId = parseInt(req.params.courseId);
-    const lessonId = parseInt(req.params.lessonId);
-
-    if (isNaN(courseId) || isNaN(lessonId)) {
-      console.error('Invalid course or lesson ID:', { courseId, lessonId });
-      return res.status(400).json({ error: 'Invalid course or lesson ID' });
-    }
-
-    console.log('Fetching lesson from database:', { courseId, lessonId });
-
     const lesson = await prisma.lesson.findUnique({
-      where: {
-        id: lessonId,
-        courseId: courseId
-      },
+      where: { id: lessonId },
       include: {
-        resources: true,
-        course: true
+        // Optionally include related data
       }
     });
 
-    if (!lesson) {
-      console.error('Lesson not found in database:', { courseId, lessonId });
+    if (!lesson || lesson.courseId !== courseId) {
       return res.status(404).json({ error: 'Lesson not found' });
     }
 
-    console.log('Found lesson:', {
-      id: lesson.id,
-      title: lesson.title
-    });
+    // Optionally, add nextLessonId and prevLessonId logic here
 
-    // Get next and previous lesson IDs
-    console.log('Fetching adjacent lessons...');
-    const [prevLesson, nextLesson] = await Promise.all([
-      prisma.lesson.findFirst({
-        where: {
-          courseId,
-          order: { lt: lesson.order }
-        },
-        orderBy: { order: 'desc' },
-        select: { id: true }
-      }),
-      prisma.lesson.findFirst({
-        where: {
-          courseId,
-          order: { gt: lesson.order }
-        },
-        orderBy: { order: 'asc' },
-        select: { id: true }
-      })
-    ]);
-
-    console.log('Found adjacent lessons:', {
-      prevLessonId: prevLesson?.id,
-      nextLessonId: nextLesson?.id
-    });
-
-    // Transform the response to match the frontend's expected format
-    const response = {
-      ...lesson,
-      nextLessonId: nextLesson?.id.toString() || null,
-      prevLessonId: prevLesson?.id.toString() || null,
-      objectives: [],
-      hints: [],
-      simulatorConfig: {
-        files: {
-          'main.ino': `// Pin definitions
-const int ledPin = 13;
-
-void setup() {
-  // Initialize digital pin as output
-  pinMode(ledPin, OUTPUT);
-}
-
-void loop() {
-  digitalWrite(ledPin, HIGH);  // Turn LED on
-  delay(1000);                 // Wait 1 second
-  digitalWrite(ledPin, LOW);   // Turn LED off
-  delay(1000);                 // Wait 1 second
-}`
-        },
-        parts: [
-          {
-            type: 'arduino-uno',
-            id: 'uno',
-            top: 0,
-            left: 0
-          },
-          {
-            type: 'led',
-            id: 'led1',
-            top: 100,
-            left: 100,
-            attrs: {
-              color: 'red'
-            }
-          }
-        ],
-        connections: [
-          ['uno:13', 'led1:1'],
-          ['uno:GND', 'led1:2']
-        ]
-      }
-    };
-
-    console.log('Sending response with lesson data');
-    res.json(response);
+    res.json(lesson);
   } catch (error) {
-    console.error('Unexpected error in lesson fetch endpoint:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      params: req.params
-    });
-    res.status(500).json({ 
-      error: 'Failed to fetch lesson',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    console.error('Error fetching lesson:', error);
+    res.status(500).json({ error: 'Failed to fetch lesson' });
   }
 });
 
@@ -591,9 +495,9 @@ app.get('/api/certificates/:id/download', async (req, res) => {
 });
 
 // Generate certificate when course is completed
-app.post('/api/courses/:courseId/certificate', async (req, res) => {
+app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, res) => {
   try {
-    const userId = 1;
+    const userId = req.user.id; // Use authenticated user's ID
     const courseId = parseInt(req.params.courseId);
 
     console.log('Generating certificate for:', { userId, courseId });

@@ -103,6 +103,15 @@ const api = axios.create({
 // Import the new progress API utility
 import progressApi from '../../utils/progress-api';
 
+interface LessonContent {
+  id: string;
+  title: string;
+  videoUrl: string;
+  theory: string;
+  practicalGuide: string;
+  initialCode: string;
+}
+
 const LessonDetail = () => {
   const { courseId, lessonId } = useParams();
   const { user } = useAuth(); // Add this line to get the current user
@@ -247,6 +256,14 @@ const LessonDetail = () => {
           setCertificate(certData);
         }
       }
+  
+      // --- ADD THIS: Refresh course progress after completion ---
+      const courseProgressResponse = await api.get(`/api/courses/${courseId}/progress?userId=${user.id}`);
+      if (courseProgressResponse.status === 200) {
+        setCourseProgress(courseProgressResponse.data);
+      }
+      // ---------------------------------------------------------
+  
     } catch (error) {
       console.error('Error completing lesson:', error);
       setError(error.response?.data?.error || error.message || 'Failed to complete lesson. Please try again.');
@@ -289,19 +306,24 @@ const LessonDetail = () => {
 
 
   const handleNextLesson = () => {
-    if (nextLessonId) {
+    if (nextLessonId && !isNaN(Number(nextLessonId))) {
       window.location.href = `/courses/${courseId}/lessons/${nextLessonId}`;
     } else {
+      // All lessons completed, go to course overview or show completion
       window.location.href = `/courses/${courseId}`;
     }
   };
 
   useEffect(() => {
     const fetchCourseProgress = async () => {
-      if (!courseId) return;
+      if (!courseId || !user || !user.token) return;
       try {
         // Using axios instead of fetch
-        const response = await api.get(`/api/courses/${courseId}/progress`);
+        const response = await api.get(`/api/courses/${courseId}/progress`, {
+          headers: {
+            Authorization: `Bearer ${user.token}`
+          }
+        });
         if (response.status === 200) {
           const data = response.data;
           setCourseProgress(data);
@@ -385,11 +407,11 @@ const LessonDetail = () => {
               {/* Objectives Card */}
               <div className="space-y-4 p-6 border rounded-lg">
                 <Skeleton className="h-8 w-40 bg-primary/20" />
-                <div className="space-y-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <Skeleton className="h-5 w-5 rounded-full bg-primary/20" />
-                      <Skeleton className="h-6 flex-1 bg-primary/20" />
+                <div className="space-y-2">
+                  {(lesson?.objectives || []).map((objective, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-primary" />
+                      <span>{objective}</span>
                     </div>
                   ))}
                 </div>
@@ -400,8 +422,10 @@ const LessonDetail = () => {
                 <Skeleton className="h-8 w-40 bg-primary/20" />
                 <Skeleton className="h-10 w-full bg-primary/20" />
                 <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-6 w-full bg-primary/20" />
+                  {(lesson?.hints || []).map((hint, i) => (
+                    <div key={i}>
+                      <Skeleton key={i} className="h-6 w-full bg-primary/20" />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -410,8 +434,10 @@ const LessonDetail = () => {
               <div className="space-y-4 p-6 border rounded-lg">
                 <Skeleton className="h-8 w-40 bg-primary/20" />
                 <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-8 w-full bg-primary/20" />
+                  {(lesson?.resources || []).map((resource, i) => (
+                    <div key={i}>
+                      <Skeleton key={i} className="h-8 w-full bg-primary/20" />
+                    </div>
                   ))}
                 </div>
               </div>
