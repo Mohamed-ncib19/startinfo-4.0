@@ -57,41 +57,55 @@ async function main() {
         {
           title: 'Getting Started with Arduino',
           description: 'Learn about Arduino boards and development environment.',
-          content: `# Getting Started with Arduino
-
-## What is Arduino?
-Arduino is an open-source electronics platform based on easy-to-use hardware and software.
-
-## What You\'ll Learn
-- Understanding Arduino boards
-- Setting up Arduino IDE
-- Basic electronics concepts
-- Your first Arduino sketch`,
+          content: `# Getting Started with Arduino\n\n## What is Arduino?\nArduino is an open-source electronics platform based on easy-to-use hardware and software.\n\n## What You\'ll Learn\n- Understanding Arduino boards\n- Setting up Arduino IDE\n- Basic electronics concepts\n- Your first Arduino sketch`,
           duration: 30,
           order: 1,
           courseId: arduinoCourse.id,
           isPublished: true,
+          objectives: [
+            'Understand what Arduino is',
+            'Set up the Arduino IDE',
+            'Write and upload your first sketch'
+          ],
+          hints: [
+            'Check your USB cable if upload fails',
+            'Use the built-in LED for your first test'
+          ]
         },
         {
           title: 'Digital Input and Output',
           description: 'Learn how to use digital pins for input and output.',
-          content: `# Digital Input and Output
-
-## Understanding Digital Signals
-Digital signals are either HIGH (5V) or LOW (0V).
-
-## Digital Output
-- Using digitalWrite()
-- Controlling LEDs
-- Using multiple outputs`,
+          content: `# Digital Input and Output\n\n## Understanding Digital Signals\nDigital signals are either HIGH (5V) or LOW (0V).\n\n## Digital Output\n- Using digitalWrite()\n- Controlling LEDs\n- Using multiple outputs`,
           duration: 45,
           order: 2,
           courseId: arduinoCourse.id,
           isPublished: true,
+          objectives: [
+            'Understand digital signals',
+            'Control LEDs with digitalWrite()',
+            'Read button input with digitalRead()'
+          ],
+          hints: [
+            'Check pin numbers carefully',
+            'Use pull-down resistors for buttons'
+          ]
         }
       ]
     });
     console.log('Seeded Arduino lessons');
+
+    // Create simulators for Arduino lessons
+    const arduinoLessons = await prisma.lesson.findMany({ where: { courseId: arduinoCourse?.id } });
+    for (const lesson of arduinoLessons) {
+      await prisma.simulator.create({
+        data: {
+          config: '',
+          components: '',
+          wokwiId: '375297939731395585', // Example Wokwi project ID
+          lessonId: lesson.id
+        }
+      });
+    }
   }
 
   // Create lessons for Robotics course

@@ -1,6 +1,13 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000';
+
+interface LessonProgress {
+  completed: boolean;
+  timeSpent: number;
+  attempts: number;
+  completedAt?: string;
+}
 
 // Create a separate axios instance for progress-related operations
 const progressApi = axios.create({
@@ -11,7 +18,7 @@ const progressApi = axios.create({
 });
 
 // Get lesson progress using userId
-export const getLessonProgress = async (lessonId: number, userId: number) => {
+export const getLessonProgress = async (lessonId: number, userId: number): Promise<LessonProgress> => {
   try {
     const response = await progressApi.get(`/api/lessons/${lessonId}/progress?userId=${userId}`);
     return response.data;
@@ -27,7 +34,11 @@ export const getLessonProgress = async (lessonId: number, userId: number) => {
 };
 
 // Update lesson progress using userId
-export const updateLessonProgress = async (lessonId: number, userId: number, data: any) => {
+export const updateLessonProgress = async (
+  lessonId: number, 
+  userId: number, 
+  data: Partial<LessonProgress>
+): Promise<LessonProgress> => {
   try {
     const response = await progressApi.post(`/api/lessons/${lessonId}/progress`, {
       userId,
@@ -36,12 +47,19 @@ export const updateLessonProgress = async (lessonId: number, userId: number, dat
     return response.data;
   } catch (error) {
     console.error('Error updating lesson progress:', error);
+    if (error instanceof AxiosError) {
+      throw new Error(error.response?.data?.error || 'Failed to update progress');
+    }
     throw error;
   }
 };
 
 // Complete lesson using userId
-export const completeLesson = async (lessonId: number, userId: number, timeSpent: number) => {
+export const completeLesson = async (
+  lessonId: number, 
+  userId: number, 
+  timeSpent: number
+): Promise<LessonProgress> => {
   try {
     const response = await progressApi.post(`/api/lessons/${lessonId}/progress`, {
       userId,
@@ -52,6 +70,9 @@ export const completeLesson = async (lessonId: number, userId: number, timeSpent
     return response.data;
   } catch (error) {
     console.error('Error completing lesson:', error);
+    if (error instanceof AxiosError) {
+      throw new Error(error.response?.data?.error || 'Failed to complete lesson');
+    }
     throw error;
   }
 };

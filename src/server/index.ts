@@ -415,33 +415,110 @@ app.get('/api/courses/:courseId/lessons', async (req, res) => {
   }
 });
 
-// Get lesson by ID
+// Get lesson by ID (the canonical endpoint)
 app.get('/api/courses/:courseId/lessons/:lessonId', async (req, res) => {
   const courseId = parseInt(req.params.courseId);
   const lessonId = parseInt(req.params.lessonId);
 
   if (isNaN(courseId) || isNaN(lessonId)) {
-    return res.status(400).json({ error: 'Invalid course or lesson ID' });
+    return res.status(400).json({ 
+      error: 'Invalid course or lesson ID',
+      details: 'Both courseId and lessonId must be valid numbers'
+    });
   }
 
   try {
+    // First check if course exists
+    const course = await prisma.course.findUnique({
+      where: { id: courseId }
+    });
+    if (!course) {
+      return res.status(404).json({ 
+        error: 'Course not found',
+        details: `Course with ID ${courseId} does not exist`
+      });
+    }
+
+    // Fetch the lesson with all related data
     const lesson = await prisma.lesson.findUnique({
       where: { id: lessonId },
       include: {
-        // Optionally include related data
+        resources: true,
+        course: {
+          select: {
+            id: true,
+            title: true,
+            description: true
+          }
+        },
+        simulator: true,
+        quizzes: {
+          include: {
+            questions: true
+          }
+        }
       }
     });
-
-    if (!lesson || lesson.courseId !== courseId) {
-      return res.status(404).json({ error: 'Lesson not found' });
+    if (!lesson) {
+      return res.status(404).json({ 
+        error: 'Lesson not found',
+        details: `Lesson with ID ${lessonId} does not exist`
+      });
     }
-
-    // Optionally, add nextLessonId and prevLessonId logic here
-
-    res.json(lesson);
+    if (lesson.courseId !== courseId) {
+      return res.status(404).json({ 
+        error: 'Lesson not found in course',
+        details: `Lesson ${lessonId} does not belong to course ${courseId}`
+      });
+    }
+    // Get next and previous lesson IDs
+    const [prevLesson, nextLesson] = await Promise.all([
+      prisma.lesson.findFirst({
+        where: { courseId: courseId, order: { lt: lesson.order } },
+        orderBy: { order: 'desc' },
+        select: { id: true }
+      }),
+      prisma.lesson.findFirst({
+        where: { courseId: courseId, order: { gt: lesson.order } },
+        orderBy: { order: 'asc' },
+        select: { id: true }
+      })
+    ]);
+    // Transform the lesson data to include all required fields and safe defaults
+    const transformedLesson = {
+      id: lesson.id,
+      title: lesson.title || '',
+      description: lesson.description || '',
+      content: lesson.content || '',
+      videoUrl: lesson.videoUrl || '',
+      duration: lesson.duration || 0,
+      order: lesson.order || 0,
+      isPublished: lesson.isPublished || false,
+      courseId: lesson.courseId,
+      nextLessonId: nextLesson?.id?.toString() || null,
+      prevLessonId: prevLesson?.id?.toString() || null,
+      objectives: Array.isArray(lesson.objectives) ? lesson.objectives : [],
+      hints: Array.isArray(lesson.hints) ? lesson.hints : [],
+      resources: Array.isArray(lesson.resources) ? lesson.resources : [],
+      simulatorConfig: lesson.simulator ? {
+        files: { 'main.ino': lesson.simulator.config || '' },
+        parts: (() => { try { return JSON.parse(lesson.simulator.components || '[]'); } catch { return []; } })(),
+        connections: []
+      } : {
+        files: {},
+        parts: [],
+        connections: []
+      },
+      createdAt: lesson.createdAt,
+      updatedAt: lesson.updatedAt
+    };
+    res.json(transformedLesson);
   } catch (error) {
     console.error('Error fetching lesson:', error);
-    res.status(500).json({ error: 'Failed to fetch lesson' });
+    res.status(500).json({ 
+      error: 'Failed to fetch lesson',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 

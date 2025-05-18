@@ -8,9 +8,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Award, Clock, ChevronRight, Play, Star } from 'lucide-react';
+import { BookOpen, Award, Clock, ChevronRight, Play, Star, CheckCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 
 type CourseCardProps = {
   title: string;
@@ -21,9 +23,11 @@ type CourseCardProps = {
   image: string;
   rating: number;
   students: number;
+  isCompleted?: boolean;
+  progress?: number;
 };
 
-const CourseCard = ({ title, description, level, modules, duration, image, rating, students }: CourseCardProps) => {
+const CourseCard = ({ title, description, level, modules, duration, image, rating, students, isCompleted, progress }: CourseCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -42,11 +46,19 @@ const CourseCard = ({ title, description, level, modules, duration, image, ratin
             alt={title}
             className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
           />
+          {isCompleted && (
+            <div className="absolute top-2 right-2">
+              <Badge className="bg-green-500 hover:bg-green-600">
+                <CheckCircle className="w-4 h-4 mr-1" />
+                Completed
+              </Badge>
+            </div>
+          )}
           {isHovered && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
               <Button variant="outline" className="text-white border-white hover:bg-white/20">
                 <Play className="mr-2 h-4 w-4" />
-                Watch Preview
+                {isCompleted ? 'Review Course' : 'Watch Preview'}
               </Button>
             </div>
           )}
@@ -78,6 +90,15 @@ const CourseCard = ({ title, description, level, modules, duration, image, ratin
               <BookOpen className="mr-2 h-4 w-4" />
               <span>{modules} Modules</span>
             </div>
+            {progress !== undefined && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Progress</span>
+                  <span className="font-medium">{progress}%</span>
+                </div>
+                <Progress value={progress} className="h-2" />
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <Star className="h-4 w-4 text-yellow-400 mr-1" />
@@ -93,7 +114,7 @@ const CourseCard = ({ title, description, level, modules, duration, image, ratin
           </Button>
           <Button size="sm" className="group" asChild>
             <Link to={`/courses/enroll`}>
-              Enroll Now
+              {isCompleted ? 'Review Course' : 'Enroll Now'}
               <ChevronRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
             </Link>
           </Button>
@@ -103,7 +124,15 @@ const CourseCard = ({ title, description, level, modules, duration, image, ratin
   );
 };
 
-const CourseSection = () => {
+type CourseProgressMap = {
+  [title: string]: {
+    isCompleted: boolean;
+    progress: number;
+  };
+};
+
+// Accept courseProgressMap as a prop (default to empty for now)
+const CourseSection = ({ courseProgressMap = {} }: { courseProgressMap?: CourseProgressMap }) => {
   const courses = [
     {
       title: 'Robotics Fundamentals',
@@ -176,7 +205,11 @@ const CourseSection = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
             >
-              <CourseCard {...course} />
+              <CourseCard
+                {...course}
+                isCompleted={courseProgressMap[course.title]?.isCompleted || false}
+                progress={courseProgressMap[course.title]?.progress || 0}
+              />
             </motion.div>
           ))}
         </div>
