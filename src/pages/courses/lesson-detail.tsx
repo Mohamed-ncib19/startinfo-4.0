@@ -213,7 +213,7 @@ const LessonDetail = () => {
 
         // Fetch progress
         try {
-          const progressResponse = await progressApi.getLessonProgress(numericLessonId, user.id);
+          const progressResponse = await progressApi.getLessonProgress(numericLessonId);
           setProgress(progressResponse);
 
           // Fetch course progress to check if course is completed
@@ -250,33 +250,27 @@ const LessonDetail = () => {
     try {
       setIsCompleting(true);
       if (!lessonId || !courseId || !user) return;
-  
+
       const numericLessonId = parseInt(lessonId);
       const numericCourseId = parseInt(courseId);
       if (isNaN(numericLessonId) || isNaN(numericCourseId)) return;
-  
-      // Calculate time spent
+
+      // Mark current lesson as completed
       const timeSpent = startTime 
         ? Math.floor((new Date().getTime() - startTime.getTime()) / 1000)
         : progress.timeSpent;
-  
-      // Mark lesson as completed
-      const progressData = await progressApi.completeLesson(numericLessonId, user.id, timeSpent);
-      setProgress(progressData);
-  
-      // Check if this is the final lesson
+      await progressApi.completeLesson(numericLessonId, timeSpent);
+
+      // Only for the final lesson, check if all lessons are completed
       if (isFinalLesson) {
-        // Fetch current course progress
         const courseProgressResponse = await api.get(`/api/courses/${numericCourseId}/progress`);
         const courseProgressData = courseProgressResponse.data;
-        
-        // Check if all lessons are completed
+
         if (courseProgressData.completedLessons === courseProgressData.totalLessons) {
-          // Generate certificate (this will only succeed if all lessons are completed)
+          // Mark course as completed and show certificate
           const certResponse = await axios.post(`${API_BASE_URL}/api/courses/${numericCourseId}/certificate`, {
             userId: user.id
           });
-
           if (certResponse.status === 200) {
             const certData = certResponse.data;
             if (certData && !certData.error) {
@@ -285,23 +279,11 @@ const LessonDetail = () => {
               setIsCourseCompleted(true);
               toast.success('Congratulations! You have successfully completed the course.');
             }
-          } else {
-            // If certificate not generated, still show course completion dialog
-            setShowCourseCompletion(true);
-            setIsCourseCompleted(true);
-            toast.success('Congratulations! You have successfully completed the course.');
           }
         }
-      } else {
-        setShowReview(true);
       }
-  
-      // Refresh course progress
-      const courseProgressResponse = await api.get(`/api/courses/${numericCourseId}/progress`);
-      if (courseProgressResponse.status === 200) {
-        setCourseProgress(courseProgressResponse.data);
-      }
-  
+      // Instead of showing review modal, navigate back to course page
+      navigate(`/courses/${courseId}`);
     } catch (error: any) {
       console.error('Error completing lesson:', error);
       toast.error(error.response?.data?.error || 'Failed to complete lesson. Please try again.');
@@ -317,7 +299,7 @@ const LessonDetail = () => {
       const numericLessonId = parseInt(lessonId);
       if (isNaN(numericLessonId)) return;
 
-      await progressApi.updateLessonProgress(numericLessonId, user.id, {
+      await progressApi.updateLessonProgress(numericLessonId, {
         timeSpent,
         completed: progress.completed
       });
@@ -347,40 +329,13 @@ const LessonDetail = () => {
       const numericCourseId = parseInt(courseId);
       if (isNaN(numericLessonId) || isNaN(numericCourseId)) return;
 
-      // Calculate time spent
+      // Mark current lesson as completed
       const timeSpent = startTime 
         ? Math.floor((new Date().getTime() - startTime.getTime()) / 1000)
         : progress.timeSpent;
+      await progressApi.completeLesson(numericLessonId, timeSpent);
 
-      // Mark current lesson as completed
-      const progressData = await progressApi.completeLesson(numericLessonId, user.id, timeSpent);
-      setProgress(progressData);
-
-      // Check if this was the final lesson
-      if (isFinalLesson) {
-        // Mark course as completed
-        const courseProgressResponse = await api.get(`/api/courses/${numericCourseId}/progress`);
-        const courseProgressData = courseProgressResponse.data;
-        
-        if (courseProgressData.completedLessons === courseProgressData.totalLessons) {
-          // Generate certificate
-          const certResponse = await axios.post(`${API_BASE_URL}/api/courses/${numericCourseId}/certificate`, {
-            userId: user.id
-          });
-
-          if (certResponse.status === 200) {
-            const certData = certResponse.data;
-            if (certData && !certData.error) {
-              setShowCertificate(true);
-              setCertificate(certData);
-              setIsCourseCompleted(true);
-              toast.success('Congratulations! You have completed the course!');
-            }
-          }
-        }
-      }
-
-      // Navigate to next lesson or course overview
+      // Navigate to next lesson
       if (nextLessonId && !isNaN(Number(nextLessonId))) {
         navigate(`/courses/${courseId}/lessons/${nextLessonId}`);
       } else {
@@ -632,37 +587,6 @@ const LessonDetail = () => {
           </div>
         </CardContent>
       </Card>
-
-      {/* Review Dialog */}
-      <Dialog open={showReview} onOpenChange={setShowReview}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Lesson Completed!</DialogTitle>
-            <DialogDescription>
-              Congratulations on completing this lesson. You're making great progress!
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Course Progress</span>
-              <span className="text-sm text-muted-foreground">
-                {courseProgress.completedLessons}/{courseProgress.totalLessons} lessons
-              </span>
-            </div>
-            <Progress value={courseProgress.progress} className="h-2" />
-            
-            <div className="flex justify-end gap-4 mt-4">
-              <Button variant="outline" onClick={() => setShowReview(false)}>
-                Close
-              </Button>
-              <Button onClick={handleNextLesson}>
-                {nextLessonId ? 'Next Lesson' : 'Back to Course'}
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Certificate Dialog */}
       <Dialog open={showCertificate} onOpenChange={setShowCertificate}>

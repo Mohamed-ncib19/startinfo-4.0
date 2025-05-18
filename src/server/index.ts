@@ -1,20 +1,46 @@
 //server/index.ts : 
 
-import express, { Request, Response, Application, Router } from 'express';
+import express, { Request, Response, Application, Router, NextFunction } from 'express';
 import cors from 'cors';
 import { PrismaClient, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import { authenticateToken } from '../lib/auth';
 
 // Load environment variables
 dotenv.config();
 
-const prisma = new PrismaClient();
+// Initialize Prisma client as a singleton
+const prismaClientSingleton = () => {
+  return new PrismaClient();
+};
+
+declare global {
+  var prisma: undefined | ReturnType<typeof prismaClientSingleton>;
+}
+
+const prisma = globalThis.prisma ?? prismaClientSingleton();
+
+if (process.env.NODE_ENV !== 'production') globalThis.prisma = prisma;
+
 const app: Application = express();
 const router: Router = express.Router();
 const PORT = process.env.PORT || 5000;
+
+// Add this at the top of the file (after imports)
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: number;
+        email: string;
+        role: string;
+      };
+    }
+  }
+}
 
 // Configure CORS
 app.use(cors({
@@ -24,6 +50,7 @@ app.use(cors({
   credentials: true
 }));
 
+// Add JSON parsing middleware
 app.use(express.json());
 
 // Verify database connection on startup
@@ -42,23 +69,34 @@ async function verifyDatabaseConnection() {
   }
 }
 
+// Call verifyDatabaseConnection on startup
+verifyDatabaseConnection();
+
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+router.get('/api/health', async (req: Request, res: Response) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', message: 'Database connection is healthy' });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(500).json({ status: 'error', message: 'Database connection failed' });
+  }
 });
 
-app.post('/api/auth/signup', async (req, res) => {
+router.post('/api/auth/signup', async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
-    return res.status(400).json({ status: 'error', message: 'All fields are required.' });
+    res.status(400).json({ status: 'error', message: 'All fields are required.' });
+    return;
   }
 
   try {
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ status: 'error', message: 'Email already in use.' });
+      res.status(409).json({ status: 'error', message: 'Email already in use.' });
+      return;
     }
 
     // Hash the password
@@ -90,43 +128,46 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+router.post('/api/auth/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({
+     res.status(400).json({
       status: 'error',
       message: 'Email and password are required.',
     });
+    return;
   }
 
   try {
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (!user) {
-      return res.status(401).json({
+       res.status(401).json({
         status: 'error',
         message: 'Invalid email or password.',
       });
+      return;
     }
 
     // Compare passwords
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({
+       res.status(401).json({
         status: 'error',
         message: 'Invalid email or password.',
       });
+      return;
     }
 
     // Generate a JWT token instead of a random hex
     const token = jwt.sign(
       { 
-        id: user.id,
+        userId: user.id,
         email: user.email,
         role: user.role 
       }, 
-      process.env.JWT_SECRET || 'a8d4f7e2c6b9a1d5e8f3c7b2a9d6e5f4c3b2a1d8e7f6c5b4a3d2e1f8c7b6a5',
+      process.env.JWT_SECRET as string,
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
@@ -148,13 +189,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-
-
-
-
-
-// Get all courses
-app.get('/api/courses', async (req, res) => {
+router.get('/api/courses', async (req: Request, res: Response) => {
   try {
     console.log('Fetching courses...');
     const courses = await prisma.course.findMany({
@@ -171,19 +206,20 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
-// Get course by ID
-app.get('/api/courses/:id', async (req, res) => {
+router.get('/api/courses/:id', async (req: Request, res: Response) => {
   try {
     const courseId = Number(req.params.id);
     if (isNaN(courseId)) {
-      return res.status(400).json({ error: 'Invalid course ID' });
+       res.status(400).json({ error: 'Invalid course ID' });
+       return;
     }
     const course = await prisma.course.findUnique({
       where: { id: courseId },
       include: { lessons: true }
     });
     if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+      res.status(404).json({ error: 'Course not found' });
+      return ;
     }
     res.json(course);
   } catch (error) {
@@ -191,184 +227,13 @@ app.get('/api/courses/:id', async (req, res) => {
   }
 });
 
-
-
-// Authentication middleware
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN format
-  
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided' });
-  }
-
-  try {
-    // Verify the JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'a8d4f7e2c6b9a1d5e8f3c7b2a9d6e5f4c3b2a1d8e7f6c5b4a3d2e1f8c7b6a5');
-    
-    // Set the user information on the request object
-    // Match the property names with what's in the token
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role
-    };
-    
-    next();
-  } catch (error) {
-    console.error('Authentication error:', error);
-    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-  }
-};
-
-// Get lesson progress - modified to accept userId as a query parameter
-app.get('/api/lessons/:id/progress', async (req, res) => {
-  try {
-    const lessonId = Number(req.params.id);
-    // Get userId from query parameter or from authenticated user
-    const userId = req.query.userId ? Number(req.query.userId) : (req.user?.id || null);
-    
-    if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
-    }
-    
-    if (isNaN(lessonId)) {
-      return res.status(400).json({ error: 'Invalid lesson ID' });
-    }
-    
-    // Find existing progress for this user and lesson
-    let progress = await prisma.lessonProgress.findUnique({
-      where: {
-        userId_lessonId: {
-          userId: userId,
-          lessonId: lessonId
-        }
-      }
-    });
-    
-    // If no progress exists yet, create a default progress object
-    if (!progress) {
-      progress = {
-        id: 0,
-        userId: userId,
-        lessonId: lessonId,
-        completed: false,
-        completedAt: null,
-        timeSpent: 0,
-        attempts: 0,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-    }
-    
-    res.json(progress);
-  } catch (error) {
-    console.error('Error fetching lesson progress:', error);
-    res.status(500).json({ error: 'Failed to fetch lesson progress' });
-  }
-});
-
-// Update lesson progress - modified to accept userId in the request body
-app.post('/api/lessons/:id/progress', async (req, res) => {
-  try {
-    const lessonId = Number(req.params.id);
-    // Get userId from request body or from authenticated user
-    const userId = req.body.userId ? Number(req.body.userId) : (req.user?.id || null);
-    const { completed, timeSpent, attempts } = req.body;
-    
-    if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
-    }
-    
-    if (isNaN(lessonId)) {
-      return res.status(400).json({ error: 'Invalid lesson ID' });
-    }
-    
-    // Find existing progress or create new one
-    const progress = await prisma.lessonProgress.upsert({
-      where: {
-        userId_lessonId: {
-          userId: userId,
-          lessonId: lessonId
-        }
-      },
-      update: {
-        completed: completed || false,
-        completedAt: completed ? new Date() : null,
-        timeSpent: timeSpent || 0,
-        attempts: attempts || 0,
-        updatedAt: new Date()
-      },
-      create: {
-        userId: userId,
-        lessonId: lessonId,
-        completed: completed || false,
-        completedAt: completed ? new Date() : null,
-        timeSpent: timeSpent || 0,
-        attempts: attempts || 0
-      }
-    });
-    
-    res.json(progress);
-  } catch (error) {
-    console.error('Error updating lesson progress:', error);
-    res.status(500).json({ error: 'Failed to update lesson progress' });
-  }
-});
-
-// Get course progress
-app.get('/api/courses/:id/progress', authenticateToken, async (req, res) => {
-  try {
-    const courseId = Number(req.params.id);
-    const userId = req.user.id; // Get user ID from authenticated user
-    
-    if (isNaN(courseId)) {
-      return res.status(400).json({ error: 'Invalid course ID' });
-    }
-    
-    // Get all lessons for this course
-    const lessons = await prisma.lesson.findMany({
-      where: { courseId: courseId }
-    });
-    
-    if (lessons.length === 0) {
-      return res.json({
-        completed: false,
-        progress: 0,
-        lessonProgress: []
-      });
-    }
-    
-    // Get progress for all lessons in this course for this user
-    const lessonProgress = await prisma.lessonProgress.findMany({
-      where: {
-        userId: userId,
-        lessonId: { in: lessons.map(lesson => lesson.id) }
-      }
-    });
-    
-    // Calculate overall progress
-    const completedLessons = lessonProgress.filter(progress => progress.completed).length;
-    const progressPercentage = Math.round((completedLessons / lessons.length) * 100);
-    
-    res.json({
-      completed: completedLessons === lessons.length,
-      progress: progressPercentage,
-      lessonProgress: lessonProgress
-    });
-  } catch (error) {
-    console.error('Error fetching course progress:', error);
-    res.status(500).json({ error: 'Failed to fetch course progress' });
-  }
-});
-
-// Get all lessons for a course
-app.get('/api/courses/:courseId/lessons', async (req, res) => {
+router.get('/api/courses/:courseId/lessons', async (req: Request, res: Response) => {
   try {
     const courseId = parseInt(req.params.courseId);
     console.log('courseId', courseId);
     if (isNaN(courseId)) {
-      return res.status(400).json({ error: 'Invalid course ID' });
+      res.status(400).json({ error: 'Invalid course ID' });
+      return;
     }
 
     console.log('Fetching lessons for course:', courseId);
@@ -388,7 +253,8 @@ app.get('/api/courses/:courseId/lessons', async (req, res) => {
 
     if (!lessons || lessons.length === 0) {
       console.log('No lessons found for course:', courseId);
-      return res.status(404).json({ error: 'No lessons found for this course' });
+       res.status(404).json({ error: 'No lessons found for this course' });
+       return;
     }
 
     console.log('Found lessons:', lessons.length);
@@ -415,16 +281,16 @@ app.get('/api/courses/:courseId/lessons', async (req, res) => {
   }
 });
 
-// Get lesson by ID (the canonical endpoint)
-app.get('/api/courses/:courseId/lessons/:lessonId', async (req, res) => {
+router.get('/api/courses/:courseId/lessons/:lessonId', async (req: Request, res: Response) => {
   const courseId = parseInt(req.params.courseId);
   const lessonId = parseInt(req.params.lessonId);
 
   if (isNaN(courseId) || isNaN(lessonId)) {
-    return res.status(400).json({ 
+     res.status(400).json({ 
       error: 'Invalid course or lesson ID',
       details: 'Both courseId and lessonId must be valid numbers'
     });
+    return;
   }
 
   try {
@@ -433,10 +299,11 @@ app.get('/api/courses/:courseId/lessons/:lessonId', async (req, res) => {
       where: { id: courseId }
     });
     if (!course) {
-      return res.status(404).json({ 
+       res.status(404).json({ 
         error: 'Course not found',
         details: `Course with ID ${courseId} does not exist`
       });
+      return;
     }
 
     // Fetch the lesson with all related data
@@ -460,16 +327,18 @@ app.get('/api/courses/:courseId/lessons/:lessonId', async (req, res) => {
       }
     });
     if (!lesson) {
-      return res.status(404).json({ 
+       res.status(404).json({ 
         error: 'Lesson not found',
         details: `Lesson with ID ${lessonId} does not exist`
       });
+      return;
     }
     if (lesson.courseId !== courseId) {
-      return res.status(404).json({ 
+       res.status(404).json({ 
         error: 'Lesson not found in course',
         details: `Lesson ${lessonId} does not belong to course ${courseId}`
       });
+      return;
     }
     // Get next and previous lesson IDs
     const [prevLesson, nextLesson] = await Promise.all([
@@ -522,8 +391,7 @@ app.get('/api/courses/:courseId/lessons/:lessonId', async (req, res) => {
   }
 });
 
-// Get user's certificates
-app.get('/api/certificates', async (req, res) => {
+router.get('/api/certificates', async (req: Request, res: Response) => {
   try {
     const userId = 1; // TODO: Get from auth context
     const certificates = await prisma.certificate.findMany({
@@ -545,8 +413,7 @@ app.get('/api/certificates', async (req, res) => {
   }
 });
 
-// Download certificate
-app.get('/api/certificates/:id/download', async (req, res) => {
+router.get('/api/certificates/:id/download', async (req: Request, res: Response) => {
   try {
     const certificate = await prisma.certificate.findUnique({
       where: { id: parseInt(req.params.id) },
@@ -557,7 +424,8 @@ app.get('/api/certificates/:id/download', async (req, res) => {
     });
 
     if (!certificate) {
-      return res.status(404).json({ error: 'Certificate not found' });
+       res.status(404).json({ error: 'Certificate not found' });
+       return;
     }
 
     // TODO: Generate PDF certificate
@@ -571,9 +439,12 @@ app.get('/api/certificates/:id/download', async (req, res) => {
   }
 });
 
-// Generate certificate when course is completed
-app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, res) => {
+router.post('/api/courses/:courseId/certificate', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!req.user) {
+       res.status(401).json({ error: 'Unauthorized: No user in request' });
+       return;
+    }
     const userId = req.user.id; // Use authenticated user's ID
     const courseId = parseInt(req.params.courseId);
 
@@ -581,7 +452,8 @@ app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, re
 
     if (isNaN(courseId)) {
       console.error('Invalid course ID:', req.params.courseId);
-      return res.status(400).json({ error: 'Invalid course ID' });
+       res.status(400).json({ error: 'Invalid course ID' });
+       return;
     }
 
     // First check if the course exists
@@ -591,7 +463,8 @@ app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, re
 
     if (!course) {
       console.error('Course not found:', courseId);
-      return res.status(404).json({ error: 'Course not found' });
+       res.status(404).json({ error: 'Course not found' });
+       return;
     }
 
     console.log('Course found:', course);
@@ -605,7 +478,8 @@ app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, re
 
     if (!lessons.length) {
       console.error('No lessons found for course:', courseId);
-      return res.status(400).json({ error: 'Course has no lessons' });
+       res.status(400).json({ error: 'Course has no lessons' });
+       return;
     }
 
     // Get progress for all lessons
@@ -630,10 +504,11 @@ app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, re
 
     if (!allLessonsCompleted) {
       console.error('Not all lessons are completed');
-      return res.status(400).json({ 
+       res.status(400).json({ 
         error: 'Course not completed',
         details: 'Some lessons are not marked as completed'
       });
+      return;
     }
 
     // Check if certificate already exists
@@ -646,7 +521,8 @@ app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, re
 
     if (existingCertificate) {
       console.error('Certificate already exists:', existingCertificate);
-      return res.status(400).json({ error: 'Certificate already exists' });
+       res.status(400).json({ error: 'Certificate already exists' });
+       return;
     }
 
     // Generate certificate
@@ -673,8 +549,7 @@ app.post('/api/courses/:courseId/certificate', authenticateToken, async (req, re
   }
 });
 
-// User registration endpoint
-app.post('/api/auth/register', async (req, res) => {
+router.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
     console.log('Received registration request body:', req.body);
     const { email, password } = req.body;
@@ -684,20 +559,23 @@ app.post('/api/auth/register', async (req, res) => {
     // Validate required fields
     if (!email || !password) {
       console.error('Missing required fields:', { email: !!email, password: !!password });
-      return res.status(400).json({ error: 'Email and password are required' });
+       res.status(400).json({ error: 'Email and password are required' });
+       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       console.error('Invalid email format:', email);
-      return res.status(400).json({ error: 'Invalid email format' });
+       res.status(400).json({ error: 'Invalid email format' });
+       return;
     }
 
     // Validate password strength
     if (password.length < 8) {
       console.error('Password too short');
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+       res.status(400).json({ error: 'Password must be at least 8 characters long' });
+       return;
     }
 
     // Check if user already exists
@@ -708,7 +586,8 @@ app.post('/api/auth/register', async (req, res) => {
 
     if (existingUser) {
       console.error('User already exists:', email);
-      return res.status(400).json({ error: 'User with this email already exists' });
+       res.status(400).json({ error: 'User with this email already exists' });
+       return;
     }
 
     // Generate a default name from email
@@ -779,14 +658,13 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Get user progress for all courses
-router.get('/api/user-progress', async (req: Request, res: Response) => {
+router.get('/api/user-progress', async (req, res) => {
   try {
     const userId = 1; // TODO: Get from auth middleware
-    const progress = await prisma.enrollment.findMany({
+    const progress = await prisma.progress.findMany({
       where: { userId },
       include: {
-        course: true,
-        progress: true
+        course: true
       }
     });
     res.json(progress);
@@ -797,35 +675,40 @@ router.get('/api/user-progress', async (req: Request, res: Response) => {
 });
 
 // Get user progress for a specific course
-router.get('/api/courses/:courseId/progress', async (req: Request<{ courseId: string }>, res: Response) => {
+router.get('/api/courses/:courseId/progress', async (req, res) => {
   try {
     const userId = 1; // TODO: Get from auth middleware
     const courseId = parseInt(req.params.courseId);
-    
-    const enrollment = await prisma.enrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId,
-          courseId
-        }
-      },
-      include: {
-        progress: true
-      }
-    });
-
-    if (!enrollment) {
-      return res.json({
+    if (isNaN(courseId)) {
+      res.status(400).json({ error: 'Invalid course ID' });
+      return;
+    }
+    // Find progress record for this user and course
+    const progress = await prisma.progress.findFirst({ where: { userId, courseId } });
+    if (!progress) {
+      res.json({
         completed: false,
         progress: 0,
         lessonProgress: []
       });
+      return;
     }
-
+    // Get all lessons for this course
+    const lessons = await prisma.lesson.findMany({ where: { courseId } });
+    // Get progress for all lessons in this course for this user
+    const lessonProgress = await prisma.lessonProgress.findMany({
+      where: {
+        userId: userId,
+        lessonId: { in: lessons.map(lesson => lesson.id) }
+      }
+    });
+    // Calculate overall progress
+    const completedLessons = lessonProgress.filter(lp => lp.completed).length;
+    const progressPercentage = lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
     res.json({
-      completed: enrollment.completed,
-      progress: enrollment.progress?.progress || 0,
-      lessonProgress: enrollment.progress?.lessonProgress || []
+      completed: completedLessons === lessons.length,
+      progress: progressPercentage,
+      lessonProgress: lessonProgress
     });
   } catch (error) {
     console.error('Error fetching course progress:', error);
@@ -833,89 +716,102 @@ router.get('/api/courses/:courseId/progress', async (req: Request<{ courseId: st
   }
 });
 
-// Get course progress
-app.get('/api/courses/:courseId/progress', async (req, res) => {
+// Get lessons with progress for a course
+router.get('/api/courses/:courseId/lessons-with-progress', async (req: Request, res: Response) => {
   try {
-    const courseId = parseInt(req.params.courseId);
-    
-    if (isNaN(courseId)) {
-      return res.status(400).json({ error: 'Invalid course ID' });
+    const courseId = Number(req.params.courseId);
+    const userId = req.query.userId ? Number(req.query.userId) : undefined;
+    if (!userId) {
+      res.status(400).json({ error: 'User ID is required' });
+      return;
     }
-
-    // Ensure default user exists
-    const defaultUser = await prisma.user.upsert({
-      where: { id: 1 },
-      update: {},
-      create: {
-        id: 1,
-        email: 'default@startinfo.com',
-        password: 'defaultpass123',
-        name: 'Default User',
-        role: 'STUDENT',
-        verified: true
-      }
-    });
-
-    const userId = defaultUser.id;
+    if (isNaN(courseId)) {
+      res.status(400).json({ error: 'Invalid course ID' });
+      return;
+    }
 
     // Get all lessons for the course
     const lessons = await prisma.lesson.findMany({
       where: { courseId },
-      select: { id: true }
+      orderBy: { order: 'asc' }
     });
 
-    // Get progress for all lessons
-    const progress = await prisma.lessonProgress.findMany({
+    // Get all progress for these lessons for the user
+    const progressList = await prisma.lessonProgress.findMany({
       where: {
         userId,
-        lessonId: {
-          in: lessons.map(lesson => lesson.id)
-        }
+        lessonId: { in: lessons.map(l => l.id) }
       }
     });
 
-    // Calculate overall progress
-    const completedLessons = progress.filter(p => p.completed).length;
-    const totalLessons = lessons.length;
-    const progressPercentage = totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0;
+    // Map progress by lessonId for quick lookup
+    const progressMap: Record<number, any> = {};
+    for (const p of progressList) {
+      progressMap[p.lessonId] = p;
+    }
 
-    res.json({
-      completed: completedLessons === totalLessons,
-      progress: progressPercentage,
-      completedLessons,
-      totalLessons,
-      lessonProgress: progress
-    });
+    // Attach progress to each lesson
+    const lessonsWithProgress = lessons.map(lesson => ({
+      ...lesson,
+      progress: progressMap[lesson.id] || {
+        completed: false,
+        timeSpent: 0,
+        attempts: 0,
+        completedAt: null
+      }
+    }));
+
+    res.json(lessonsWithProgress);
   } catch (error) {
-    console.error('Error fetching course progress:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch course progress',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    console.error('Error fetching lessons with progress:', error);
+    res.status(500).json({ error: 'Failed to fetch lessons with progress' });
   }
 });
 
-// Error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+// Add this route to handle lesson progress updates
+router.post('/api/lessons/:id/progress', async (req: Request, res: Response) => {
+  try {
+    const lessonId = parseInt(req.params.id);
+    const { userId, completed, timeSpent, attempts, completedAt } = req.body;
+    if (!userId || isNaN(lessonId)) {
+      res.status(400).json({ error: 'User ID and valid lesson ID are required' });
+      return;
+    }
+    // Upsert progress
+    const progress = await prisma.lessonProgress.upsert({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId
+        }
+      },
+      update: {
+        completed,
+        timeSpent,
+        attempts,
+        completedAt: completed ? (completedAt ? new Date(completedAt) : new Date()) : null,
+        updatedAt: new Date()
+      },
+      create: {
+        userId,
+        lessonId,
+        completed,
+        timeSpent,
+        attempts,
+        completedAt: completed ? (completedAt ? new Date(completedAt) : new Date()) : null
+      }
+    });
+    res.json(progress);
+  } catch (error) {
+    console.error('Error updating lesson progress:', error);
+    res.status(500).json({ error: 'Failed to update lesson progress' });
+  }
 });
+
+// Mount the router
+app.use(router);
 
 // Start the server
-const server = app.listen(PORT, async () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  await verifyDatabaseConnection();
-});
-
-// Handle server errors
-server.on('error', (error) => {
-  console.error('Server error:', error);
-});
-
-// Handle process termination
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully');
-  server.close(() => {
-    console.log('Process terminated');
-  });
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PlayCircle, Code, BookOpen, MessageCircle, ArrowLeft, ArrowRight, CheckCircle, Clock, Award, Download, Share } from 'lucide-react';
@@ -16,6 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAuth } from '@/contexts/auth-context';
+import { toast } from 'sonner';
 
 interface Lesson {
   id: number;
@@ -69,14 +72,15 @@ const API_BASE_URL = 'http://localhost:5000';
 const LessonDetailPage = () => {
   const { courseId, lessonId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [progress, setProgress] = useState<LessonProgress>({
     completed: false,
     timeSpent: 0,
     attempts: 0
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('theory');
   const [isCompleting, setIsCompleting] = useState(false);
   const [code, setCode] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
@@ -86,110 +90,82 @@ const LessonDetailPage = () => {
   const [startTime, setStartTime] = useState<Date | null>(null);
 
   useEffect(() => {
-    const fetchLesson = async () => {
+    const fetchLessonAndProgress = async () => {
+      if (!courseId || !lessonId || !user?.id) return;
+
       try {
-        setIsLoading(true);
-        setError(null);
-
-        if (!courseId || !lessonId) {
-          throw new Error('Invalid course or lesson ID');
-        }
-
-        const numericCourseId = parseInt(courseId);
-        const numericLessonId = parseInt(lessonId);
-
-        if (isNaN(numericCourseId) || isNaN(numericLessonId)) {
-          throw new Error('Invalid course or lesson ID format');
-        }
-
-        // Fetch lesson data
-        const lessonResponse = await fetch(`${API_BASE_URL}/api/courses/${numericCourseId}/lessons/${numericLessonId}`);
-        if (!lessonResponse.ok) {
-          throw new Error('Failed to fetch lesson');
-        }
+        // Fetch lesson details
+        const lessonResponse = await fetch(
+          `${API_BASE_URL}/api/courses/${courseId}/lessons/${lessonId}`
+        );
+        if (!lessonResponse.ok) throw new Error('Failed to fetch lesson');
         const lessonData = await lessonResponse.json();
         setLesson(lessonData);
         setCode(lessonData.simulatorConfig?.files['main.ino'] || '');
 
-        // Fetch progress
-        const progressResponse = await fetch(`${API_BASE_URL}/api/lessons/${numericLessonId}/progress`);
-        if (progressResponse.ok) {
-          const progressData = await progressResponse.json();
-          setProgress(progressData);
-        }
+        // Fetch lesson progress
+        const progressResponse = await fetch(
+          `${API_BASE_URL}/api/lessons/${lessonId}/progress?userId=${user.id}`
+        );
+        if (!progressResponse.ok) throw new Error('Failed to fetch progress');
+        const progressData = await progressResponse.json();
+        setProgress(progressData);
       } catch (error) {
-        console.error('Error fetching lesson:', error);
-        setError(error instanceof Error ? error.message : 'Failed to load lesson');
+        console.error('Error fetching lesson data:', error);
+        toast.error('Failed to load lesson data');
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
-    fetchLesson();
-  }, [courseId, lessonId]);
+    fetchLessonAndProgress();
+  }, [courseId, lessonId, user?.id]);
 
-  const handleComplete = async () => {
+  const updateProgress = async (completed: boolean) => {
+    if (!courseId || !lessonId || !user?.id) return;
+
     try {
-      setIsCompleting(true);
-      if (!lessonId || !courseId) return;
-
-      const numericLessonId = parseInt(lessonId);
-      const numericCourseId = parseInt(courseId);
-      if (isNaN(numericLessonId) || isNaN(numericCourseId)) return;
-
-      // Calculate time spent
-      const timeSpent = startTime 
-        ? Math.floor((new Date().getTime() - startTime.getTime()) / 1000)
-        : progress.timeSpent;
-
-      // Update lesson progress
-      const progressResponse = await fetch(`${API_BASE_URL}/api/lessons/${numericLessonId}/progress`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          completed: true,
-          timeSpent,
-          completedAt: new Date().toISOString()
-        }),
-      });
-
-      if (!progressResponse.ok) {
-        const errorData = await progressResponse.json();
-        throw new Error(errorData.error || 'Failed to update progress');
-      }
-
-      const progressData = await progressResponse.json();
-      setProgress(progressData);
-      setShowReview(true);
-
-      // Check if all lessons are completed
-      const certResponse = await fetch(`${API_BASE_URL}/api/courses/${numericCourseId}/certificate`, {
-        method: 'POST',
-      });
-
-      if (certResponse.ok) {
-        const certData = await certResponse.json();
-        if (certData && !certData.error) {
-          setShowCertificate(true);
-          setCertificate(certData);
+      const response = await fetch(
+        `${API_BASE_URL}/api/lessons/${lessonId}/progress`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            completed,
+            timeSpent: progress.timeSpent + 1, // Increment time spent
+            attempts: progress.attempts + 1,
+            completedAt: completed ? new Date().toISOString() : undefined
+          }),
         }
+      );
+
+      if (!response.ok) throw new Error('Failed to update progress');
+      
+      const updatedProgress = await response.json();
+      setProgress(updatedProgress);
+
+      if (completed) {
+        toast.success('Lesson completed!');
       }
     } catch (error) {
-      console.error('Error completing lesson:', error);
-      alert(error instanceof Error ? error.message : 'Failed to complete lesson. Please try again.');
-    } finally {
-      setIsCompleting(false);
+      console.error('Error updating progress:', error);
+      toast.error('Failed to update progress');
     }
   };
 
+  const handleComplete = () => {
+    updateProgress(true);
+  };
+
   const handleNextLesson = () => {
-    if (lesson?.nextLessonId) {
-      navigate(`/courses/${courseId}/lessons/${lesson.nextLessonId}`);
-    } else {
-      navigate(`/courses/${courseId}`);
-    }
+    if (!lesson) return;
+    
+    // Find the next lesson in the course
+    const nextLessonId = lesson.order + 1;
+    navigate(`/courses/${courseId}/lessons/${nextLessonId}`);
   };
 
   const handleRunCode = () => {
@@ -198,7 +174,7 @@ const LessonDetailPage = () => {
     setTimeout(() => setIsSimulating(false), 2000);
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="container mx-auto py-8">
         <div className="grid gap-8">
@@ -247,24 +223,18 @@ const LessonDetailPage = () => {
     );
   }
 
-  if (error) {
+  if (!lesson) {
     return (
       <div className="container mx-auto py-8">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-destructive mb-4">Error</h2>
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <Button asChild>
-            <Link to={`/courses/${courseId}`}>
-              Back to Course
-            </Link>
+          <h2 className="text-2xl font-bold mb-4">Lesson Not Found</h2>
+          <p className="text-muted-foreground mb-4">The lesson you're looking for doesn't exist.</p>
+          <Button onClick={() => navigate(`/courses/${courseId}`)}>
+            Back to Course
           </Button>
         </div>
       </div>
     );
-  }
-
-  if (!lesson) {
-    return null;
   }
 
   return (
@@ -315,7 +285,7 @@ const LessonDetailPage = () => {
             <CardDescription>{lesson.description}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="theory" className="w-full">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="video" className="flex items-center gap-2">
                   <PlayCircle className="h-4 w-4" />

@@ -2,6 +2,7 @@ import { PrismaClient, User } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
+import { Request, Response, NextFunction } from 'express';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'a8d4f7e2c6b9a1d5e8f3c7b2a9d6e5f4c3b2a1d8e7f6c5b4a3d2e1f8c7b6a5';
@@ -140,4 +141,24 @@ export async function resetPassword(token: string, newPassword: string) {
   });
 
   return user;
+}
+
+export function authenticateToken(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) {
+    res.status(401).json({ error: 'No token provided' });
+    return;
+  }
+  try {
+    const decoded = verifyToken(token);
+    req.user = {
+      id: decoded.userId,
+      email: decoded.email,
+      role: decoded.role
+    };
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
 }

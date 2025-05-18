@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, Users, BarChart } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/auth-context';
 
 interface Course {
   id: number;
@@ -16,56 +18,62 @@ interface Course {
   instructor: {
     name: string;
   };
+  progress?: {
+    completed: boolean;
+    progress: number;
+    completedLessons: number;
+    totalLessons: number;
+  };
 }
 
-const API_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'http://localhost:5000';
 
 const CoursesPage = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        console.log('Fetching courses...');
-        const response = await fetch(`${API_URL}/courses`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch courses');
+        const response = await fetch(`${API_BASE_URL}/api/courses`);
+        if (response.ok) {
+          const coursesData = await response.json();
+          
+          // Fetch progress for each course
+          const coursesWithProgress = await Promise.all(
+            coursesData.map(async (course: Course) => {
+              if (!user?.id) return course;
+              
+              try {
+                const progressResponse = await fetch(
+                  `${API_BASE_URL}/api/courses/${course.id}/progress?userId=${user.id}`
+                );
+                if (progressResponse.ok) {
+                  const progressData = await progressResponse.json();
+                  return { ...course, progress: progressData };
+                }
+              } catch (error) {
+                console.error(`Error fetching progress for course ${course.id}:`, error);
+              }
+              return course;
+            })
+          );
+          
+          setCourses(coursesWithProgress);
         }
-        const data = await response.json();
-        console.log('Courses data:', data);
-        setCourses(data);
       } catch (error) {
         console.error('Error fetching courses:', error);
-        setError('Failed to load courses');
       } finally {
         setLoading(false);
       }
     };
 
     fetchCourses();
-  }, []);
+  }, [user?.id]);
 
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4">Error</h2>
-          <p className="text-gray-600">{error}</p>
-        </div>
-      </div>
-    );
+    return <div>Loading courses...</div>;
   }
 
   return (
@@ -101,8 +109,24 @@ const CoursesPage = () => {
                     <span>{course.instructor?.name || 'Unknown'}</span>
                   </div>
                 </div>
+                
+                {course.progress && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Progress</span>
+                      <span className="font-medium">{course.progress.progress}%</span>
+                    </div>
+                    <Progress value={course.progress.progress} className="h-2" />
+                    <div className="text-sm text-muted-foreground">
+                      {course.progress.completedLessons} of {course.progress.totalLessons} lessons completed
+                    </div>
+                  </div>
+                )}
+                
                 <Button className="w-full" asChild>
-                  <Link to={`/courses/${course.id}`}>Start Learning</Link>
+                  <Link to={`/courses/${course.id}`}>
+                    {course.progress?.completed ? 'Review Course' : 'Start Learning'}
+                  </Link>
                 </Button>
               </div>
             </CardContent>
