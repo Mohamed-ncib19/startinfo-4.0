@@ -53,6 +53,115 @@ app.use(cors({
 // Add JSON parsing middleware
 app.use(express.json());
 
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
+// Define all routes before mounting the router
+router.get('/api/lessons/:id/progress/:userId', authenticateToken, async (req: Request, res: Response) => {
+  console.log('=== Lesson Progress Request ===');
+  console.log('URL:', req.url);
+  console.log('Method:', req.method);
+  console.log('Params:', req.params);
+  console.log('Headers:', {
+    ...req.headers,
+    authorization: req.headers.authorization ? 'Bearer [REDACTED]' : undefined
+  });
+  console.log('Authenticated User:', req.user);
+  console.log('===========================');
+
+  try {
+    const lessonId = parseInt(req.params.id);
+    const userId = parseInt(req.params.userId);
+
+    console.log('Parsed IDs:', { lessonId, userId });
+
+    if (isNaN(lessonId) || isNaN(userId)) {
+      console.log('Invalid IDs:', { lessonId, userId });
+      res.status(400).json({ error: 'Invalid lesson ID or user ID' });
+      return;
+    }
+
+    // Verify that the authenticated user matches the requested userId
+    if (!req.user) {
+      console.log('No authenticated user found');
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    if (req.user.id !== userId) {
+      console.log('User ID mismatch:', { 
+        authenticated: req.user.id, 
+        requested: userId,
+        user: req.user 
+      });
+      res.status(403).json({ error: 'Unauthorized to access this progress' });
+      return;
+    }
+
+    console.log('Looking up progress in database...');
+    // Find or create progress record
+    const progress = await prisma.lessonProgress.findUnique({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId
+        }
+      }
+    });
+
+    console.log('Database query result:', progress);
+
+    if (!progress) {
+      console.log('No progress found, returning default');
+      // Return default progress if none exists
+      res.json({
+        completed: false,
+        timeSpent: 0,
+        attempts: 0
+      });
+      return;
+    }
+
+    console.log('Found progress:', progress);
+    res.json(progress);
+  } catch (error) {
+    console.error('Error fetching lesson progress:', error);
+    res.status(500).json({ error: 'Failed to fetch lesson progress' });
+  }
+});
+
+// Log all registered routes
+console.log('Registered routes:');
+router.stack.forEach((r: any) => {
+  if (r.route && r.route.path) {
+    console.log(`${Object.keys(r.route.methods).join(', ').toUpperCase()} ${r.route.path}`);
+  }
+});
+
+// Mount the router
+app.use(router);
+
+// Test endpoint
+app.get('/api/test', (req, res) => {
+  console.log('Test endpoint hit');
+  res.json({ message: 'Server is running' });
+});
+
+// 404 handler
+app.use((req, res, next) => {
+  console.log('404 Not Found:', req.method, req.url);
+  res.status(404).json({ error: 'Not Found', path: req.url });
+});
+
+// Error handler
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('Server Error:', err);
+  res.status(500).json({ error: 'Internal Server Error', message: err.message });
+});
+
 // Verify database connection on startup
 async function verifyDatabaseConnection() {
   try {
@@ -679,22 +788,54 @@ router.get('/api/courses/:courseId/progress', async (req, res) => {
   try {
     const userId = 1; // TODO: Get from auth middleware
     const courseId = parseInt(req.params.courseId);
+    
+    console.log('=== Course Progress Request ===');
+    console.log('Course ID:', courseId);
+    console.log('User ID:', userId);
+    
     if (isNaN(courseId)) {
+      console.log('Invalid course ID');
       res.status(400).json({ error: 'Invalid course ID' });
       return;
     }
-    // Find progress record for this user and course
-    const progress = await prisma.progress.findFirst({ where: { userId, courseId } });
-    if (!progress) {
-      res.json({
-        completed: false,
-        progress: 0,
-        lessonProgress: []
-      });
+
+    // First check if the course exists
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: { lessons: true }
+    });
+
+    console.log('Course found:', course ? {
+      id: course.id,
+      title: course.title,
+      lessonCount: course.lessons.length
+    } : 'Not found');
+
+    if (!course) {
+      console.log('Course not found');
+      res.status(404).json({ error: 'Course not found' });
       return;
     }
+
+    // Find progress record for this user and course
+    const progress = await prisma.progress.findFirst({ 
+      where: { userId, courseId } 
+    });
+
+    console.log('Course progress found:', progress);
+
     // Get all lessons for this course
-    const lessons = await prisma.lesson.findMany({ where: { courseId } });
+    const lessons = await prisma.lesson.findMany({ 
+      where: { courseId },
+      orderBy: { order: 'asc' }
+    });
+
+    console.log('Lessons found:', lessons.map(l => ({
+      id: l.id,
+      title: l.title,
+      order: l.order
+    })));
+
     // Get progress for all lessons in this course for this user
     const lessonProgress = await prisma.lessonProgress.findMany({
       where: {
@@ -702,9 +843,19 @@ router.get('/api/courses/:courseId/progress', async (req, res) => {
         lessonId: { in: lessons.map(lesson => lesson.id) }
       }
     });
+
+    console.log('Lesson progress records found:', lessonProgress);
+
     // Calculate overall progress
     const completedLessons = lessonProgress.filter(lp => lp.completed).length;
     const progressPercentage = lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
+
+    console.log('Progress calculation:', {
+      totalLessons: lessons.length,
+      completedLessons,
+      progressPercentage
+    });
+
     res.json({
       completed: completedLessons === lessons.length,
       progress: progressPercentage,
@@ -773,10 +924,28 @@ router.post('/api/lessons/:id/progress', async (req: Request, res: Response) => 
   try {
     const lessonId = parseInt(req.params.id);
     const { userId, completed, timeSpent, attempts, completedAt } = req.body;
+    
+    console.log('Received lesson progress update request:', {
+      params: req.params,
+      body: req.body,
+      headers: req.headers
+    });
+
     if (!userId || isNaN(lessonId)) {
+      console.log('Invalid request:', { userId, lessonId });
       res.status(400).json({ error: 'User ID and valid lesson ID are required' });
       return;
     }
+
+    console.log('Attempting to upsert progress with data:', {
+      userId,
+      lessonId,
+      completed,
+      timeSpent,
+      attempts,
+      completedAt
+    });
+
     // Upsert progress
     const progress = await prisma.lessonProgress.upsert({
       where: {
@@ -801,6 +970,8 @@ router.post('/api/lessons/:id/progress', async (req: Request, res: Response) => 
         completedAt: completed ? (completedAt ? new Date(completedAt) : new Date()) : null
       }
     });
+
+    console.log('Successfully updated progress:', progress);
     res.json(progress);
   } catch (error) {
     console.error('Error updating lesson progress:', error);
@@ -808,8 +979,115 @@ router.post('/api/lessons/:id/progress', async (req: Request, res: Response) => 
   }
 });
 
-// Mount the router
-app.use(router);
+// Add this route to handle lesson completion
+router.post('/api/lessons/:id/complete', authenticateToken, async (req: Request, res: Response) => {
+  console.log('Lesson completion endpoint hit:', {
+    method: req.method,
+    url: req.url,
+    params: req.params,
+    body: req.body,
+    headers: req.headers,
+    user: req.user
+  });
+  
+  try {
+    const lessonId = parseInt(req.params.id);
+    const { userId, timeSpent } = req.body;
+    
+    console.log('Processing lesson completion request:', {
+      lessonId,
+      userId,
+      timeSpent,
+      authenticatedUser: req.user
+    });
+
+    if (!userId || isNaN(lessonId)) {
+      console.log('Invalid request:', { userId, lessonId });
+      res.status(400).json({ error: 'User ID and valid lesson ID are required' });
+      return;
+    }
+
+    // Verify that the authenticated user matches the userId in the request
+    if (req.user?.id !== userId) {
+      console.log('User ID mismatch:', { authenticated: req.user?.id, requested: userId });
+      res.status(403).json({ error: 'Unauthorized to complete this lesson' });
+      return;
+    }
+
+    // Upsert progress with completed status
+    const progress = await prisma.lessonProgress.upsert({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId
+        }
+      },
+      update: {
+        completed: true,
+        timeSpent,
+        attempts: { increment: 1 },
+        completedAt: new Date(),
+        updatedAt: new Date()
+      },
+      create: {
+        userId,
+        lessonId,
+        completed: true,
+        timeSpent,
+        attempts: 1,
+        completedAt: new Date()
+      }
+    });
+
+    console.log('Successfully completed lesson:', progress);
+
+    // --- NEW LOGIC: Update course progress if all lessons are completed ---
+    // 1. Find the lesson to get the courseId
+    const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+    if (!lesson) {
+      res.status(404).json({ error: 'Lesson not found' });
+      return;
+    }
+    const courseId = lesson.courseId;
+
+    // 2. Get all lessons for the course
+    const allLessons = await prisma.lesson.findMany({ where: { courseId } });
+    // 3. Get all completed lesson progress for this user in this course
+    const completedLessons = await prisma.lessonProgress.findMany({
+      where: {
+        userId,
+        lessonId: { in: allLessons.map(l => l.id) },
+        completed: true,
+      },
+    });
+    // 4. If all lessons are completed, update course progress
+    const allCompleted = completedLessons.length === allLessons.length;
+    await prisma.progress.upsert({
+      where: {
+        userId_courseId: {
+          userId,
+          courseId,
+        },
+      },
+      update: {
+        completed: allCompleted,
+        updatedAt: new Date(),
+      },
+      create: {
+        userId,
+        courseId,
+        completed: allCompleted,
+      },
+    });
+    console.log('Course progress updated:', { userId, courseId, allCompleted });
+    // --- END NEW LOGIC ---
+
+    res.json(progress);
+  } catch (error) {
+    console.error('Error completing lesson:', error);
+    res.status(500).json({ error: 'Failed to complete lesson' });
+  }
+});
 
 // Start the server
 app.listen(PORT, () => {

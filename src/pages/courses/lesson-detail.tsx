@@ -43,6 +43,7 @@ interface LessonProgress {
   timeSpent: number;
   attempts: number;
   completedAt?: string;
+  lessonId?: number;
 }
 
 interface Resource {
@@ -299,9 +300,14 @@ const LessonDetail = () => {
       const numericLessonId = parseInt(lessonId);
       if (isNaN(numericLessonId)) return;
 
+      console.log('Updating progress for lesson:', numericLessonId);
+
       await progressApi.updateLessonProgress(numericLessonId, {
+        lessonId: numericLessonId,
         timeSpent,
-        completed: progress.completed
+        completed: progress.completed,
+        attempts: progress.attempts || 1,
+        completedAt: progress.completed ? new Date().toISOString() : undefined
       });
     } catch (error: any) {
       console.error('Error updating progress:', error);
@@ -359,18 +365,8 @@ const LessonDetail = () => {
 
   // Add a function to check if user can access the lesson
   const canAccessLesson = () => {
-    if (!lesson) return false;
-    
-    // If course is completed, only allow viewing the final lesson
-    if (isCourseCompleted) {
-      return isFinalLesson;
-    }
-    
-    // If this is the first lesson, allow access
-    if (!lesson.prevLessonId) return true;
-    
-    // Check if previous lesson is completed
-    return progress.completed;
+    // Remove all restrictions, always allow access
+    return true;
   };
 
   if (isLoading) {

@@ -27,6 +27,7 @@ interface LessonProgress {
   timeSpent: number;
   attempts: number;
   completedAt?: string;
+  lessonId?: number;
 }
 
 // Helper to get userId from localStorage
@@ -50,12 +51,33 @@ function getToken() {
 export const getLessonProgress = async (lessonId: number): Promise<LessonProgress> => {
   try {
     const userId = getUserId();
-    const response = await progressApi.get(`/api/lessons/${lessonId}/progress`, {
-      params: userId ? { userId } : {}
+    if (!userId) {
+      console.error('User ID not found in localStorage');
+      throw new Error('User ID not found');
+    }
+    
+    console.log('Fetching lesson progress:', {
+      lessonId,
+      userId,
+      url: `/api/lessons/${lessonId}/progress/${userId}`
     });
+
+    const token = getToken();
+    console.log('Using token:', token ? 'Token exists' : 'No token');
+
+    const response = await progressApi.get(`/api/lessons/${lessonId}/progress/${userId}`);
+    console.log('Progress response:', response.data);
     return response.data;
   } catch (error) {
     console.error('Error fetching lesson progress:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Axios error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
+    }
     // Return default progress if API fails
     return { 
       completed: false, 
@@ -70,17 +92,19 @@ export const updateLessonProgress = async (
   lessonId: number, 
   data: Partial<LessonProgress>
 ): Promise<LessonProgress> => {
-  console.log('data', data);
   try {
     const userId = getUserId();
+    if (!userId) {
+      throw new Error('User ID not found');
+    }
+
     const response = await progressApi.post(`/api/lessons/${lessonId}/progress`, {
-      userId,
-      completed: data.completed || false,
-      timeSpent: data.timeSpent || 0,
-      attempts: data.attempts || 0,
+      userId: Number(userId),
+      completed: data.completed ?? false,
+      timeSpent: data.timeSpent ?? 0,
+      attempts: data.attempts ?? 0,
       completedAt: data.completed ? new Date().toISOString() : null
     });
-    console.log('response', response.data);
     return response.data;
   } catch (error) {
     console.error('Error updating progress:', error);
@@ -98,18 +122,15 @@ export const completeLesson = async (
 ): Promise<LessonProgress> => {
   try {
     const userId = getUserId();
-    const validTimeSpent = typeof timeSpent === 'number' && !isNaN(timeSpent) ? timeSpent : 0;
-    const response = await progressApi.post(`/api/lessons/${lessonId}/progress`, {
-      userId,
-      completed: true,
-      timeSpent: validTimeSpent,
-      attempts: 1,
-      completedAt: new Date().toISOString()
-    });
-    
-    if (response.status !== 200) {
-      throw new Error(response.data?.error || 'Failed to complete lesson');
+    if (!userId) {
+      throw new Error('User ID not found');
     }
+
+    const validTimeSpent = typeof timeSpent === 'number' && !isNaN(timeSpent) ? timeSpent : 0;
+    const response = await progressApi.post(`/api/lessons/${lessonId}/complete`, {
+      userId: Number(userId),
+      timeSpent: validTimeSpent
+    });
     
     return response.data;
   } catch (error) {

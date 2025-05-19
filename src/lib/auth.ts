@@ -144,21 +144,41 @@ export async function resetPassword(token: string, newPassword: string) {
 }
 
 export function authenticateToken(req: Request, res: Response, next: NextFunction) {
+  console.log('=== Authentication Middleware ===');
+  console.log('Headers:', {
+    ...req.headers,
+    authorization: req.headers.authorization ? 'Bearer [REDACTED]' : undefined
+  });
+  
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
+  
+  console.log('Token exists:', !!token);
+  
   if (!token) {
+    console.log('No token provided');
     res.status(401).json({ error: 'No token provided' });
     return;
   }
+  
   try {
+    console.log('Attempting to verify token...');
     const decoded = verifyToken(token);
+    console.log('Token verified successfully:', {
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role
+    });
+    
     req.user = {
       id: decoded.userId,
       email: decoded.email,
       role: decoded.role
     };
+    console.log('User attached to request:', req.user);
     next();
   } catch (err) {
+    console.error('Token verification failed:', err);
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
