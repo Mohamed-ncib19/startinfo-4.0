@@ -987,7 +987,8 @@ router.post('/api/lessons/:id/complete', authenticateToken, async (req: Request,
     params: req.params,
     body: req.body,
     headers: req.headers,
-    user: req.user
+    user: req.user,
+    authHeader: req.headers.authorization
   });
   
   try {
@@ -998,7 +999,8 @@ router.post('/api/lessons/:id/complete', authenticateToken, async (req: Request,
       lessonId,
       userId,
       timeSpent,
-      authenticatedUser: req.user
+      authenticatedUser: req.user,
+      parsedLessonId: lessonId
     });
 
     if (!userId || isNaN(lessonId)) {
@@ -1009,7 +1011,11 @@ router.post('/api/lessons/:id/complete', authenticateToken, async (req: Request,
 
     // Verify that the authenticated user matches the userId in the request
     if (req.user?.id !== userId) {
-      console.log('User ID mismatch:', { authenticated: req.user?.id, requested: userId });
+      console.log('User ID mismatch:', { 
+        authenticated: req.user?.id, 
+        requested: userId,
+        user: req.user
+      });
       res.status(403).json({ error: 'Unauthorized to complete this lesson' });
       return;
     }

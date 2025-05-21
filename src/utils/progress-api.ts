@@ -123,8 +123,17 @@ export const completeLesson = async (
   try {
     const userId = getUserId();
     if (!userId) {
+      console.error('User ID not found in localStorage');
       throw new Error('User ID not found');
     }
+
+    const token = getToken();
+    console.log('Completing lesson with:', {
+      lessonId,
+      userId,
+      timeSpent,
+      hasToken: !!token
+    });
 
     const validTimeSpent = typeof timeSpent === 'number' && !isNaN(timeSpent) ? timeSpent : 0;
     const response = await progressApi.post(`/api/lessons/${lessonId}/complete`, {
@@ -132,10 +141,17 @@ export const completeLesson = async (
       timeSpent: validTimeSpent
     });
     
+    console.log('Lesson completion response:', response.data);
     return response.data;
   } catch (error) {
     console.error('Error completing lesson:', error);
     if (axios.isAxiosError(error)) {
+      console.error('Axios error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
       const errorMessage = error.response?.data?.error || error.message;
       throw new Error(errorMessage);
     }
