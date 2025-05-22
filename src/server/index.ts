@@ -59,6 +59,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// New endpoint: Get course progress for a user
+router.get('/api/users/:userId/courses/:courseId/progress', (req, res) => {
+  const userId = req.params.userId;
+  const courseId = req.params.courseId;
+  res.json({ userId, courseId, message: 'Test endpoint is working!' });
+});
+
 // Define all routes before mounting the router
 router.get('/api/lessons/:id/progress/:userId', authenticateToken, async (req: Request, res: Response) => {
   console.log('=== Lesson Progress Request ===');
@@ -786,13 +793,18 @@ router.get('/api/user-progress', async (req, res) => {
 // Get user progress for a specific course
 router.get('/api/courses/:courseId/progress', async (req, res) => {
   try {
-    const userId = 1; // TODO: Get from auth middleware
+    // Use userId from query string if provided
+    const userId = req.query.userId ? Number(req.query.userId) : undefined;
     const courseId = parseInt(req.params.courseId);
     
     console.log('=== Course Progress Request ===');
     console.log('Course ID:', courseId);
     console.log('User ID:', userId);
     
+    if (!userId) {
+      res.status(400).json({ error: 'User ID is required' });
+      return;
+    }
     if (isNaN(courseId)) {
       console.log('Invalid course ID');
       res.status(400).json({ error: 'Invalid course ID' });
@@ -859,6 +871,8 @@ router.get('/api/courses/:courseId/progress', async (req, res) => {
     res.json({
       completed: completedLessons === lessons.length,
       progress: progressPercentage,
+      completedLessons,
+      totalLessons: lessons.length,
       lessonProgress: lessonProgress
     });
   } catch (error) {

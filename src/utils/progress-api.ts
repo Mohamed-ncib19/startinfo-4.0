@@ -128,6 +128,11 @@ export const completeLesson = async (
     }
 
     const token = getToken();
+    if (!token) {
+      console.error('Authentication token not found');
+      throw new Error('Authentication required');
+    }
+
     console.log('Completing lesson with:', {
       lessonId,
       userId,
@@ -136,9 +141,16 @@ export const completeLesson = async (
     });
 
     const validTimeSpent = typeof timeSpent === 'number' && !isNaN(timeSpent) ? timeSpent : 0;
+    
+    // Make the request with explicit headers
     const response = await progressApi.post(`/api/lessons/${lessonId}/complete`, {
       userId: Number(userId),
       timeSpent: validTimeSpent
+    }, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
     });
     
     console.log('Lesson completion response:', response.data);
@@ -152,6 +164,15 @@ export const completeLesson = async (
         data: error.response?.data,
         headers: error.response?.headers
       });
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        // Token expired or invalid
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        throw new Error('Session expired. Please log in again.');
+      }
+      
       const errorMessage = error.response?.data?.error || error.message;
       throw new Error(errorMessage);
     }

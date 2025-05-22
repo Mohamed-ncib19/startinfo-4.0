@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,9 @@ interface Course {
     completedLessons: number;
     totalLessons: number;
   };
+  lessons?: {
+    id: number;
+  }[];
 }
 
 const API_BASE_URL = 'http://localhost:5000';
@@ -32,15 +35,17 @@ const CoursesPage = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const location = useLocation();
 
   useEffect(() => {
+    setCourses([]); // Reset courses when user changes to avoid showing another user's progress
     const fetchCourses = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/courses`);
         if (response.ok) {
           const coursesData = await response.json();
           
-          // Fetch progress for each course
+          // Fetch progress for each course for the current user only
           const coursesWithProgress = await Promise.all(
             coursesData.map(async (course: Course) => {
               if (!user?.id) return course;
@@ -61,6 +66,7 @@ const CoursesPage = () => {
           );
           
           setCourses(coursesWithProgress);
+          console.log('coursesWithProgress : ', coursesWithProgress);
         }
       } catch (error) {
         console.error('Error fetching courses:', error);
@@ -69,8 +75,12 @@ const CoursesPage = () => {
       }
     };
 
-    fetchCourses();
-  }, [user?.id]);
+    if (user?.id) {
+      fetchCourses();
+    } else {
+      setLoading(false);
+    }
+  }, [user?.id, location]);
 
   if (loading) {
     return <div>Loading courses...</div>;
@@ -114,17 +124,22 @@ const CoursesPage = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Progress</span>
-                      <span className="font-medium">{course.progress.progress}%</span>
+                      <span className="font-medium">
+                        {course.progress.totalLessons && course.progress.totalLessons > 0
+                          ? `${Math.round((course.progress.completedLessons / course.progress.totalLessons) * 100)}% (${course.progress.completedLessons}/${course.progress.totalLessons})`
+                          : '0% (0/0)'}
+                      </span>
                     </div>
-                    <Progress value={course.progress.progress} className="h-2" />
-                    <div className="text-sm text-muted-foreground">
-                      {course.progress.completedLessons} of {course.progress.totalLessons} lessons completed
-                    </div>
+                    <Progress value={course.progress.totalLessons && course.progress.totalLessons > 0 ? (course.progress.completedLessons / course.progress.totalLessons) * 100 : 0} className="h-2" />
                   </div>
                 )}
                 
                 <Button className="w-full" asChild>
-                  <Link to={`/courses/${course.id}`}>
+                  <Link to={
+                    course.lessons && course.lessons.length > 0
+                      ? `/courses/${course.id}/lessons/${course.lessons[0].id}`
+                      : `/courses/${course.id}`
+                  }>
                     {course.progress?.completed ? 'Review Course' : 'Start Learning'}
                   </Link>
                 </Button>
