@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle } from 'lucide-react';
+import { useAuth } from '@/contexts/auth-context';
+import { useParams } from 'react-router-dom';
+
+const API_BASE_URL = 'http://localhost:5000';
 
 const CourseDetailPage: React.FC = () => {
-  const [courseId, setCourseId] = useState<string | null>(null);
+  const { courseId } = useParams();
   const [course, setCourse] = useState<any>(null);
   const [courseProgress, setCourseProgress] = useState<{
     completed: boolean;
@@ -15,12 +19,13 @@ const CourseDetailPage: React.FC = () => {
     completedLessons: 0,
     totalLessons: 0
   });
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchCourseProgress = async () => {
-      if (!courseId) return;
+      if (!courseId || !user?.id) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/api/courses/${courseId}/progress`);
+        const response = await fetch(`${API_BASE_URL}/api/courses/${courseId}/progress?userId=${user.id}`);
         if (response.ok) {
           const data = await response.json();
           setCourseProgress(data);
@@ -31,7 +36,7 @@ const CourseDetailPage: React.FC = () => {
     };
 
     fetchCourseProgress();
-  }, [courseId]);
+  }, [courseId, user?.id]);
 
   return (
     <div className="container mx-auto px-4 py-8">

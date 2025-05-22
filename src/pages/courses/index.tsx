@@ -38,8 +38,12 @@ const CoursesPage = () => {
   const location = useLocation();
 
   useEffect(() => {
-    setCourses([]); // Reset courses when user changes to avoid showing another user's progress
     const fetchCourses = async () => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+
       try {
         const response = await fetch(`${API_BASE_URL}/api/courses`);
         if (response.ok) {
@@ -48,8 +52,6 @@ const CoursesPage = () => {
           // Fetch progress for each course for the current user only
           const coursesWithProgress = await Promise.all(
             coursesData.map(async (course: Course) => {
-              if (!user?.id) return course;
-              
               try {
                 const progressResponse = await fetch(
                   `${API_BASE_URL}/api/courses/${course.id}/progress?userId=${user.id}`
@@ -66,7 +68,6 @@ const CoursesPage = () => {
           );
           
           setCourses(coursesWithProgress);
-          console.log('coursesWithProgress : ', coursesWithProgress);
         }
       } catch (error) {
         console.error('Error fetching courses:', error);
@@ -75,11 +76,8 @@ const CoursesPage = () => {
       }
     };
 
-    if (user?.id) {
-      fetchCourses();
-    } else {
-      setLoading(false);
-    }
+    setLoading(true);
+    fetchCourses();
   }, [user?.id, location]);
 
   if (loading) {

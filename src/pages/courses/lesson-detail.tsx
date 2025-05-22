@@ -218,19 +218,12 @@ const LessonDetail = () => {
           setProgress(progressResponse);
 
           // Fetch course progress to check if course is completed
-          const courseProgressResponse = await api.get(`/api/courses/${numericCourseId}/progress`, {
-            headers: {
-              Authorization: `Bearer ${user.token}`
-            }
-          });
-          
-          if (courseProgressResponse.status === 200) {
-            const courseProgressData = courseProgressResponse.data;
-            setCourseProgress(courseProgressData);
-            setIsCourseCompleted(courseProgressData.completed);
-          }
+          const courseProgressResponse = await progressApi.getCourseProgress(numericCourseId);
+          setCourseProgress(courseProgressResponse);
+          setIsCourseCompleted(courseProgressResponse.completed);
         } catch (progressError) {
-          console.warn('Failed to fetch progress:', progressError);
+          toast.error('Failed to fetch course progress. Please try again.');
+          console.warn('Failed to fetch course progress:', progressError);
         }
       } catch (error: any) {
         console.error('Error fetching lesson:', error);
@@ -264,23 +257,35 @@ const LessonDetail = () => {
 
       // Only for the final lesson, check if all lessons are completed
       if (isFinalLesson) {
-        const courseProgressResponse = await api.get(`/api/courses/${numericCourseId}/progress`);
-        const courseProgressData = courseProgressResponse.data;
-
-        if (courseProgressData.completedLessons === courseProgressData.totalLessons) {
-          // Mark course as completed and show certificate
-          const certResponse = await axios.post(`${API_BASE_URL}/api/courses/${numericCourseId}/certificate`, {
-            userId: user.id
-          });
-          if (certResponse.status === 200) {
-            const certData = certResponse.data;
-            if (certData && !certData.error) {
-              setCertificate(certData);
-              setShowCourseCompletion(true);
-              setIsCourseCompleted(true);
-              toast.success('Congratulations! You have successfully completed the course.');
+        try {
+          const courseProgressResponse = await progressApi.getCourseProgress(numericCourseId);
+          const courseProgressData = courseProgressResponse;
+          if (courseProgressData.completedLessons === courseProgressData.totalLessons) {
+            // Mark course as completed and show certificate
+            const token = localStorage.getItem('token');
+            const certResponse = await axios.post(
+              `${API_BASE_URL}/api/courses/${numericCourseId}/certificate`,
+              { userId: user.id },
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            if (certResponse.status === 200) {
+              const certData = certResponse.data;
+              if (certData && !certData.error) {
+                setCertificate(certData);
+                setShowCourseCompletion(true);
+                setIsCourseCompleted(true);
+                toast.success('Congratulations! You have successfully completed the course.');
+              }
             }
           }
+        } catch (progressError) {
+          toast.error('Failed to fetch course progress. Please try again.');
+          console.warn('Failed to fetch course progress:', progressError);
         }
       }
       // Instead of showing review modal, navigate back to course page

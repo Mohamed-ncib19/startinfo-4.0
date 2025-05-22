@@ -263,7 +263,11 @@ const CourseDetail = () => {
                   </div>
                 )}
                 <Button className="w-full" asChild>
-                  <Link to={`/courses/${id}/lessons/1`}>Start Learning</Link>
+                  {course.lessons && course.lessons.length > 0 ? (
+                    <Link to={`/courses/${id}/lessons/${course.lessons[0].id}`}>Start Learning</Link>
+                  ) : (
+                    <span>Start Learning</span>
+                  )}
                 </Button>
               </div>
             </CardContent>
