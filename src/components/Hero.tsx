@@ -60,7 +60,7 @@ const Hero = () => {
           <div className="flex-1 relative">
             <div className="glass-card p-6 rounded-2xl animate-float">
               <img
-                src="/placeholder.svg"
+                src="https://superblog.supercdn.cloud/site_cuid_clvc4016q001j13bhaleswmt1/images/1c969c40-1df3-4475-b412-b9287cb0a244-1735558040969-compressed.jpeg"
                 alt="Robot illustration"
                 className="w-full h-64 object-cover rounded-lg"
               />
