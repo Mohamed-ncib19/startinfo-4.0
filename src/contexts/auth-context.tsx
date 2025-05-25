@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       const data = await res.json();
-      console.log('Signup successful:', data);
+      console.log('Signup :', data);
       return true;
     } catch (err) {
       console.error('Signup error:', err);

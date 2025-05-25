@@ -3,6 +3,16 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Bot, BookOpen, Trophy, Users, Menu, X } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Settings, LogOut } from 'lucide-react';
 // Add any dropdown UI components you use, or use a simple menu
 
 const Header = React.memo(function Header() {
@@ -36,7 +46,7 @@ const Header = React.memo(function Header() {
             <span>Projects</span>
           </Link>
           <Link
-            to="/certifications"
+            to="/certificates"
             className="text-foreground/80 hover:text-foreground flex items-center gap-2"
           >
             <Trophy className="h-4 w-4" />
@@ -62,30 +72,53 @@ const Header = React.memo(function Header() {
               </Link>
             </>
           ) : (
-            <div className="relative group">
-              <Button className="flex items-center gap-2">
-                {user.avatar ? (
-                  <img src={user.avatar} alt="avatar" className="w-6 h-6 rounded-full" />
-                ) : (
-                  <span className="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center">
-                    {user.name?.[0] || 'U'}
-                  </span>
-                )}
-                <span>{user.name || user.email}</span>
-                <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </Button>
-              <div className="absolute right-0 mt-2 w-48 bg-white border rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <Link to="/profile" className="block px-4 py-2 hover:bg-gray-100">Profile</Link>
-                <button
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={user.avatar || "/avatars/user.png"} alt={user.email} />
+                    <AvatarFallback>
+                      {user.email.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">Account</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard" className="cursor-pointer">
+                    Dashboard
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/account/settings" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/account/certifications" className="cursor-pointer">
+                    Certifications
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer text-red-600"
                   onClick={logout}
-                  className="block w-full text-left px-4 py-2 hover:bg-gray-100"
                 >
-                  Logout
-                </button>
-              </div>
-            </div>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
 
@@ -123,18 +156,65 @@ const Header = React.memo(function Header() {
               Community
             </Link>
             <div className="pt-2 space-y-2">
-              {!user && (
-                <>
-                  <Link to="/login" className="block w-full">
-                    <Button variant="outline" className="w-full">
-                      Log in
-                    </Button>
-                  </Link>
-                  <Link to="/signup" className="block w-full">
-                    <Button className="w-full">Sign up</Button>
-                  </Link>
-                </>
-              )}
+                      {/* User Menu */}
+        {user ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src="/avatars/user.png" alt={user.email} />
+                  <AvatarFallback>
+                    {user.email.substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="end" forceMount>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">Account</p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {user.email}
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/dashboard" className="cursor-pointer">
+                  Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/account/settings" className="cursor-pointer">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/account/certifications" className="cursor-pointer">
+                  Certifications
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="cursor-pointer text-red-600"
+                onClick={logout}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" asChild>
+              <Link to="/login">Log in</Link>
+            </Button>
+            <Button asChild>
+              <Link to="/signup">Sign up</Link>
+            </Button>
+          </div>
+        )}
             </div>
           </div>
         </div>

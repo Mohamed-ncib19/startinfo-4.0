@@ -233,6 +233,16 @@ const LessonDetailPage = () => {
     return !lessonProgress?.[index - 1]?.completed;
   };
 
+  // Helper to set certificate and ensure userName is present
+  const setCertificateWithUserName = (cert: any) => {
+    if (!cert) return;
+    if (!cert.userName && user?.name) {
+      setCertificate({ ...cert, userName: user.name });
+    } else {
+      setCertificate(cert);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto py-8">

@@ -33,6 +33,10 @@ import Projects from '@/pages/community/projects';
 import AccountSettings from '@/pages/account/settings';
 import Certifications from '@/pages/account/certifications';
 
+// Certificate Pages
+import CertificatesPage from '@/pages/certificates/index';
+import CertificateVerification from '@/pages/verify/[certificateNumber]';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -59,6 +63,7 @@ const App = () => {
                 <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
                 <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
                 <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
+                <Route path="/verify/:certificateNumber" element={<CertificateVerification />} />
               </Route>
 
               {/* Protected routes */}
@@ -80,6 +85,7 @@ const App = () => {
                 {/* Account Management */}
                 <Route path="/account/settings" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
                 <Route path="/account/certifications" element={<ProtectedRoute><Certifications /></ProtectedRoute>} />
+                <Route path="/certificates" element={<ProtectedRoute><CertificatesPage /></ProtectedRoute>} />
               </Route>
 
               {/* Catch-all route */}
@@ -95,7 +101,7 @@ const App = () => {
 export default App;
 
 
-function PublicRoute({ children }) {
+function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   if (user) {
     return <Navigate to="/dashboard" replace />;

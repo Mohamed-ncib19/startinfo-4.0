@@ -261,35 +261,65 @@ const LessonDetail = () => {
           const courseProgressResponse = await progressApi.getCourseProgress(numericCourseId);
           const courseProgressData = courseProgressResponse;
           if (courseProgressData.completedLessons === courseProgressData.totalLessons) {
-            // Mark course as completed and show certificate
+            // Check if certificate exists
             const token = localStorage.getItem('token');
-            const certResponse = await axios.post(
-              `${API_BASE_URL}/api/courses/${numericCourseId}/certificate`,
-              { userId: user.id },
+            const certResponse = await axios.get(
+              `${API_BASE_URL}/api/certificates/my-certificates`,
               {
                 headers: {
-                  Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json'
+                  Authorization: `Bearer ${token}`
                 }
               }
             );
+            
             if (certResponse.status === 200) {
-              const certData = certResponse.data;
-              if (certData && !certData.error) {
-                setCertificate(certData);
+              const certificates = certResponse.data;
+              const courseCertificate = certificates.find((cert: any) => cert.courseId === numericCourseId);
+              
+              if (courseCertificate) {
+                setCertificate(courseCertificate);
                 setShowCourseCompletion(true);
                 setIsCourseCompleted(true);
                 toast.success('Congratulations! You have successfully completed the course.');
+                // Don't navigate immediately, let the user see the certificate
+                return;
+              } else {
+                // If no certificate exists, try to generate one
+                const generateResponse = await axios.post(
+                  `${API_BASE_URL}/api/courses/${numericCourseId}/certificate`,
+                  { userId: user.id },
+                  {
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      'Content-Type': 'application/json'
+                    }
+                  }
+                );
+                
+                if (generateResponse.status === 200) {
+                  const certData = generateResponse.data;
+                  if (certData && !certData.error) {
+                    setCertificate(certData);
+                    setShowCourseCompletion(true);
+                    setIsCourseCompleted(true);
+                    toast.success('Congratulations! You have successfully completed the course.');
+                    // Don't navigate immediately, let the user see the certificate
+                    return;
+                  }
+                }
               }
             }
           }
         } catch (progressError) {
+          console.error('Failed to fetch course progress:', progressError);
           toast.error('Failed to fetch course progress. Please try again.');
-          console.warn('Failed to fetch course progress:', progressError);
         }
       }
-      // Instead of showing review modal, navigate back to course page
-      navigate(`/courses/${courseId}`);
+      
+      // Only navigate if we're not showing a certificate
+      if (!showCourseCompletion) {
+        navigate(`/courses/${courseId}`);
+      }
     } catch (error: any) {
       console.error('Error completing lesson:', error);
       toast.error(error.response?.data?.error || 'Failed to complete lesson. Please try again.');
@@ -374,6 +404,73 @@ const LessonDetail = () => {
     return true;
   };
 
+  const handleDownloadCertificate = async (certificateId: number) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Please log in to download your certificate');
+        return;
+      }
+
+      const response = await axios.get(
+        `${API_BASE_URL}/api/certificates/${certificateId}/download`,
+        {
+          responseType: 'blob',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      // Create a blob from the PDF data
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary link and trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `certificate-${certificate?.certificateNumber}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Certificate downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading certificate:', error);
+      toast.error('Failed to download certificate. Please try again later.');
+    }
+  };
+
+  const handleShareCertificate = async () => {
+    if (!certificate) return;
+
+    const verificationUrl = `${window.location.origin}/verify/${certificate.certificateNumber}`;
+    const shareData = {
+      title: `My ${lesson?.title.split(':')[0]} Certificate`,
+      text: `I've completed the ${lesson?.title.split(':')[0]} course! Check out my certificate:`,
+      url: verificationUrl
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        toast.success('Certificate shared successfully');
+      } else {
+        // Fallback for browsers that don't support Web Share API
+        await navigator.clipboard.writeText(verificationUrl);
+        toast.success('Verification link copied to clipboard!');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.error('Error sharing certificate:', error);
+        toast.error('Failed to share certificate. Please try again later.');
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="container mx-auto py-8">
@@ -438,6 +535,122 @@ const LessonDetail = () => {
       </div>
     );
   }
+
+  // Update the certificate dialog content
+  const renderCertificateDialog = () => (
+    <Dialog open={showCertificate} onOpenChange={setShowCertificate}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Course Completed!</DialogTitle>
+          <DialogDescription>
+            Congratulations! You've completed all lessons in this course.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          {certificate ? (
+            <>
+              <div className="border p-6 rounded-lg text-center space-y-4">
+                <Award className="w-12 h-12 mx-auto text-primary" />
+                <h3 className="text-xl font-bold">Certificate of Completion</h3>
+                <p>This certifies that</p>
+                <p className="text-lg font-semibold">{certificate.userName}</p>
+                <p>has successfully completed the course</p>
+                <p className="text-lg font-semibold">{lesson?.title.split(':')[0]}</p>
+                <p className="text-sm text-muted-foreground">
+                  Certificate #{certificate.certificateNumber}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Issued on {new Date(certificate.issuedAt).toLocaleDateString()}
+                </p>
+              </div>
+              
+              <div className="flex justify-end gap-4 mt-4">
+                <Button variant="outline" onClick={() => setShowCertificate(false)}>
+                  Close
+                </Button>
+                <Button onClick={() => handleDownloadCertificate(certificate.id)}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Certificate
+                </Button>
+                <Button variant="secondary" onClick={handleShareCertificate}>
+                  <Share className="w-4 h-4 mr-2" />
+                  Share
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-muted-foreground">Certificate is being generated...</p>
+              <div className="mt-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Update the course completion dialog content
+  const renderCourseCompletionDialog = () => (
+    <Dialog open={showCourseCompletion} onOpenChange={setShowCourseCompletion}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-2xl font-bold text-center text-green-600">
+            Course Completed!
+          </DialogTitle>
+          <DialogDescription className="text-center">
+            Congratulations! You have successfully completed the course.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          {certificate ? (
+            <>
+              <div className="border p-6 rounded-lg text-center space-y-4">
+                <Award className="w-12 h-12 mx-auto text-primary" />
+                <h3 className="text-xl font-bold">Certificate of Completion</h3>
+                <p>This certifies that</p>
+                <p className="text-lg font-semibold">{certificate.userName}</p>
+                <p>has successfully completed the course</p>
+                <p className="text-lg font-semibold">{lesson?.title.split(':')[0]}</p>
+                <p className="text-sm text-muted-foreground">
+                  Certificate #{certificate.certificateNumber}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Issued on {new Date(certificate.issuedAt).toLocaleDateString()}
+                </p>
+              </div>
+              
+              <div className="flex flex-col gap-4">
+                <Button 
+                  className="w-full" 
+                  onClick={() => handleDownloadCertificate(certificate.id)}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Certificate
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={handleShareCertificate}
+                >
+                  <Share className="w-4 h-4 mr-2" />
+                  Share Achievement
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-muted-foreground">Certificate is being generated...</p>
+              <div className="mt-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
     <div className="container mx-auto py-8">
@@ -589,103 +802,8 @@ const LessonDetail = () => {
         </CardContent>
       </Card>
 
-      {/* Certificate Dialog */}
-      <Dialog open={showCertificate} onOpenChange={setShowCertificate}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Course Completed!</DialogTitle>
-            <DialogDescription>
-              Congratulations! You've completed all lessons in this course.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {certificate && (
-              <div className="border p-6 rounded-lg text-center space-y-4">
-                <h3 className="text-xl font-bold">Certificate of Completion</h3>
-                <p>This certifies that</p>
-                <p className="text-lg font-semibold">{certificate.userName}</p>
-                <p>has successfully completed the course</p>
-                <p className="text-lg font-semibold">{lesson.title.split(':')[0]}</p>
-                <p className="text-sm text-muted-foreground">
-                  Certificate #{certificate.certificateNumber}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Issued on {new Date(certificate.issuedAt).toLocaleDateString()}
-                </p>
-              </div>
-            )}
-            
-            <div className="flex justify-end gap-4 mt-4">
-              <Button variant="outline" onClick={() => setShowCertificate(false)}>
-                Close
-              </Button>
-              <Button>
-                <Download className="w-4 h-4 mr-2" />
-                Download Certificate
-              </Button>
-              <Button variant="secondary">
-                <Share className="w-4 h-4 mr-2" />
-                Share
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Course Completion Dialog */}
-      <Dialog open={showCourseCompletion} onOpenChange={setShowCourseCompletion}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-center text-green-600">
-              Course Completed!
-            </DialogTitle>
-            <DialogDescription className="text-center">
-              Congratulations! You have successfully completed the course.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {certificate && (
-              <div className="border p-6 rounded-lg text-center space-y-4">
-                <h3 className="text-xl font-bold">Certificate of Completion</h3>
-                <p>This certifies that</p>
-                <p className="text-lg font-semibold">{certificate.userName}</p>
-                <p>has successfully completed the course</p>
-                <p className="text-lg font-semibold">{lesson?.title.split(':')[0]}</p>
-                <p className="text-sm text-muted-foreground">
-                  Certificate #{certificate.certificateNumber}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Issued on {new Date(certificate.issuedAt).toLocaleDateString()}
-                </p>
-              </div>
-            )}
-            
-            <div className="flex flex-col gap-4">
-              <Button 
-                className="w-full" 
-                onClick={() => {
-                  setShowCourseCompletion(false);
-                  navigate(`/courses/${courseId}`);
-                }}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download Certificate
-              </Button>
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => {
-                  setShowCourseCompletion(false);
-                  navigate(`/courses/${courseId}`);
-                }}
-              >
-                <Share className="w-4 h-4 mr-2" />
-                Share Achievement
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {renderCertificateDialog()}
+      {renderCourseCompletionDialog()}
     </div>
   );
 };

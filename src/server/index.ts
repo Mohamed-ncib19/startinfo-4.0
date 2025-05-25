@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { authenticateToken } from '../lib/auth';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 // Load environment variables
 dotenv.config();
@@ -507,9 +508,14 @@ router.get('/api/courses/:courseId/lessons/:lessonId', async (req: Request, res:
   }
 });
 
-router.get('/api/certificates', async (req: Request, res: Response) => {
+router.get('/api/certificates/my-certificates', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = 1; // TODO: Get from auth context
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized: No user in request' });
+      return;
+    }
+    
+    const userId = req.user.id;
     const certificates = await prisma.certificate.findMany({
       where: { userId },
       include: {
@@ -540,15 +546,93 @@ router.get('/api/certificates/:id/download', async (req: Request, res: Response)
     });
 
     if (!certificate) {
-       res.status(404).json({ error: 'Certificate not found' });
-       return;
+      res.status(404).json({ error: 'Certificate not found' });
+      return;
     }
 
-    // TODO: Generate PDF certificate
-    // For now, return a placeholder
+    // Create a new PDF document
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([842, 595]); // A4 landscape
+    const { width, height } = page.getSize();
+
+    // Load fonts
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Add certificate content
+    page.drawText('Certificate of Completion', {
+      x: width / 2 - 150,
+      y: height - 100,
+      size: 30,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    page.drawText(`This is to certify that`, {
+      x: width / 2 - 100,
+      y: height - 200,
+      size: 16,
+      font: regularFont,
+      color: rgb(0, 0, 0),
+    });
+
+    page.drawText(certificate.user.name, {
+      x: width / 2 - 100,
+      y: height - 250,
+      size: 24,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    page.drawText(`has successfully completed the course`, {
+      x: width / 2 - 120,
+      y: height - 300,
+      size: 16,
+      font: regularFont,
+      color: rgb(0, 0, 0),
+    });
+
+    page.drawText(certificate.course.title, {
+      x: width / 2 - 100,
+      y: height - 350,
+      size: 20,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    page.drawText(`Certificate Number: ${certificate.certificateNumber}`, {
+      x: 50,
+      y: 50,
+      size: 12,
+      font: regularFont,
+      color: rgb(0, 0, 0),
+    });
+
+    page.drawText(`Issued on: ${certificate.issuedAt.toLocaleDateString()}`, {
+      x: width - 200,
+      y: 50,
+      size: 12,
+      font: regularFont,
+      color: rgb(0, 0, 0),
+    });
+
+    // Add a decorative border
+    page.drawRectangle({
+      x: 20,
+      y: 20,
+      width: width - 40,
+      height: height - 40,
+      borderColor: rgb(0, 0, 0),
+      borderWidth: 2,
+    });
+
+    // Save the PDF
+    const pdfBytes = await pdfDoc.save();
+
+    // Set headers and send the PDF
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=certificate-${certificate.certificateNumber}.pdf`);
-    res.send('Certificate PDF content');
+    res.send(Buffer.from(pdfBytes));
   } catch (error) {
     console.error('Error downloading certificate:', error);
     res.status(500).json({ error: 'Failed to download certificate' });
@@ -558,72 +642,38 @@ router.get('/api/certificates/:id/download', async (req: Request, res: Response)
 router.post('/api/courses/:courseId/certificate', authenticateToken, async (req: Request, res: Response) => {
   try {
     if (!req.user) {
-       res.status(401).json({ error: 'Unauthorized: No user in request' });
-       return;
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
-    const userId = req.user.id; // Use authenticated user's ID
+
     const courseId = parseInt(req.params.courseId);
+    const userId = req.user.id;
 
-    console.log('Generating certificate for:', { userId, courseId });
-
-    if (isNaN(courseId)) {
-      console.error('Invalid course ID:', req.params.courseId);
-       res.status(400).json({ error: 'Invalid course ID' });
-       return;
-    }
-
-    // First check if the course exists
+    // Check if course exists
     const course = await prisma.course.findUnique({
-      where: { id: courseId }
+      where: { id: courseId },
+      include: { lessons: true }
     });
 
     if (!course) {
-      console.error('Course not found:', courseId);
-       res.status(404).json({ error: 'Course not found' });
-       return;
+      res.status(404).json({ error: 'Course not found' });
+      return;
     }
 
-    console.log('Course found:', course);
-
-    // Get all lessons for the course
-    const lessons = await prisma.lesson.findMany({
-      where: { courseId }
-    });
-
-    console.log('Lessons found:', lessons.length);
-
-    if (!lessons.length) {
-      console.error('No lessons found for course:', courseId);
-       res.status(400).json({ error: 'Course has no lessons' });
-       return;
-    }
-
-    // Get progress for all lessons
-    const progress = await prisma.lessonProgress.findMany({
+    // Check if all lessons are completed
+    const lessonProgress = await prisma.lessonProgress.findMany({
       where: {
         userId,
-        lessonId: {
-          in: lessons.map(lesson => lesson.id)
-        }
+        lessonId: { in: course.lessons.map(lesson => lesson.id) }
       }
     });
 
-    console.log('Lesson progress:', progress);
+    const allCompleted = course.lessons.every(lesson =>
+      lessonProgress.some(progress => progress.lessonId === lesson.id && progress.completed)
+    );
 
-    // Check if all lessons are completed
-    const allLessonsCompleted = lessons.every(lesson => {
-      const lessonProgress = progress.find(p => p.lessonId === lesson.id);
-      const isCompleted = lessonProgress?.completed;
-      console.log(`Lesson ${lesson.id} completed:`, isCompleted);
-      return isCompleted;
-    });
-
-    if (!allLessonsCompleted) {
-      console.error('Not all lessons are completed');
-       res.status(400).json({ 
-        error: 'Course not completed',
-        details: 'Some lessons are not marked as completed'
-      });
+    if (!allCompleted) {
+      res.status(400).json({ error: 'Course not completed' });
       return;
     }
 
@@ -636,32 +686,43 @@ router.post('/api/courses/:courseId/certificate', authenticateToken, async (req:
     });
 
     if (existingCertificate) {
-      console.error('Certificate already exists:', existingCertificate);
-       res.status(400).json({ error: 'Certificate already exists' });
-       return;
+      res.status(400).json({ error: 'Certificate already exists' });
+      return;
     }
 
-    // Generate certificate
+    // Generate certificate number
+    const certificateNumber = `CERT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create certificate
     const certificate = await prisma.certificate.create({
       data: {
+        certificateNumber,
+        issuedAt: new Date(),
         userId,
-        courseId,
-        certificateNumber: `CERT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        issuedAt: new Date()
+        courseId
       },
       include: {
-        course: true
+        course: true,
+        user: true
       }
     });
 
-    console.log('Certificate generated successfully:', certificate);
+    // Update user's certificates
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        certificates: {
+          connect: {
+            id: certificate.id
+          }
+        }
+      }
+    });
+
     res.json(certificate);
   } catch (error) {
     console.error('Error generating certificate:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate certificate',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ error: 'Failed to generate certificate' });
   }
 });
 
@@ -1100,12 +1161,81 @@ router.post('/api/lessons/:id/complete', authenticateToken, async (req: Request,
       },
     });
     console.log('Course progress updated:', { userId, courseId, allCompleted });
+
+    // Generate certificate if course is completed
+    if (allCompleted) {
+      // Check if certificate already exists
+      const existingCertificate = await prisma.certificate.findFirst({
+        where: {
+          userId,
+          courseId
+        }
+      });
+
+      if (!existingCertificate) {
+        // Generate new certificate
+        const certificate = await prisma.certificate.create({
+          data: {
+            userId,
+            courseId,
+            certificateNumber: `CERT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            issuedAt: new Date()
+          },
+          include: {
+            course: true
+          }
+        });
+        console.log('Certificate generated:', certificate);
+      }
+    }
     // --- END NEW LOGIC ---
 
     res.json(progress);
   } catch (error) {
     console.error('Error completing lesson:', error);
     res.status(500).json({ error: 'Failed to complete lesson' });
+  }
+});
+
+router.get('/api/certificates/verify/:certificateNumber', async (req: Request, res: Response) => {
+  try {
+    const { certificateNumber } = req.params;
+
+    // Find the certificate
+    const certificate = await prisma.certificate.findFirst({
+      where: { certificateNumber },
+      include: {
+        user: true,
+        course: true
+      }
+    });
+
+    if (!certificate) {
+      res.status(404).json({ 
+        valid: false,
+        error: 'Certificate not found'
+      });
+      return;
+    }
+
+    // Verify the certificate is valid
+    const isValid = true; // Add any additional validation logic here if needed
+
+    res.json({
+      valid: isValid,
+      certificate: {
+        userName: certificate.user.name,
+        courseName: certificate.course.title,
+        issuedAt: certificate.issuedAt,
+        certificateNumber: certificate.certificateNumber
+      }
+    });
+  } catch (error) {
+    console.error('Error verifying certificate:', error);
+    res.status(500).json({ 
+      valid: false,
+      error: 'Failed to verify certificate'
+    });
   }
 });
 

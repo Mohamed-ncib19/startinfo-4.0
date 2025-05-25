@@ -84,6 +84,8 @@ const CoursesPage = () => {
     return <div>Loading courses...</div>;
   }
 
+
+  console.log(courses);
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
@@ -133,11 +135,7 @@ const CoursesPage = () => {
                 )}
                 
                 <Button className="w-full" asChild>
-                  <Link to={
-                    course.lessons && course.lessons.length > 0
-                      ? `/courses/${course.id}/lessons/${course.lessons[0].id}`
-                      : `/courses/${course.id}`
-                  }>
+                  <Link to={`/courses/${course.id}`}>
                     {course.progress?.completed ? 'Review Course' : 'Start Learning'}
                   </Link>
                 </Button>
