@@ -278,7 +278,7 @@ const Certifications = () => {
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4 text-muted-foreground" />
                         <div>
-                          <div className="text-sm font-medium">Issued To</div>
+                          <div className="text-sm font-medium">Issued To : <span className='text-sm text-muted-foreground truncate' > {user?.name}</span></div>
                           <div className="text-sm text-muted-foreground">{cert.userName}</div>
                         </div>
                       </div>
@@ -337,7 +337,7 @@ const Certifications = () => {
                     <img 
                       src="/images/startinfo-logo.jpg" 
                       alt="StartInfo Logo" 
-                      className="h-16 object-contain"
+                      className="h-28 object-contain"
                     />
                   </div>
 
